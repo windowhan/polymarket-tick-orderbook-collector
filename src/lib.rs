@@ -1,3 +1,4 @@
+pub mod aggregate_s3;
 pub mod aggregator;
 pub mod market_discovery;
 pub mod onchain;

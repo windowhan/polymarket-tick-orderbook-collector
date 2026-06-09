@@ -4,39 +4,59 @@ version: '3.8'
 # NOTE: All containers share the same host IP, so this will NOT bypass
 # Polymarket's per-IP connection limits. Use Terraform for real multi-IP
 # distributed deployment across cloud instances.
+#
+# LocalStack is included so you can test the S3 aggregate flow locally:
+#   docker compose up -d localstack
+#   cargo test --test s3_integration_test
 
 services:
+  localstack:
+    image: localstack/localstack:latest
+    ports:
+      - "4566:4566"
+    environment:
+      - SERVICES=s3
+      - DEBUG=1
+      - AWS_DEFAULT_REGION=us-east-1
+      - AWS_ACCESS_KEY_ID=test
+      - AWS_SECRET_ACCESS_KEY=test
+    volumes:
+      - localstack_data:/var/lib/localstack
+
   collector-0:
     build: .
-    command: ["collect-orderbook", "--markets-path", "/data/markets_shard_0.jsonl", "--output-dir", "/data/orderbook"]
+    command: ["collect-orderbook", "--markets-path", "/data/markets_shard_0.jsonl", "--output-dir", "/data/orderbook", "--chunk-size", "100", "--rotate-interval-secs", "300"]
     volumes:
       - ./data:/data
     restart: unless-stopped
 
   collector-1:
     build: .
-    command: ["collect-orderbook", "--markets-path", "/data/markets_shard_1.jsonl", "--output-dir", "/data/orderbook"]
+    command: ["collect-orderbook", "--markets-path", "/data/markets_shard_1.jsonl", "--output-dir", "/data/orderbook", "--chunk-size", "100", "--rotate-interval-secs", "300"]
     volumes:
       - ./data:/data
     restart: unless-stopped
 
   collector-2:
     build: .
-    command: ["collect-orderbook", "--markets-path", "/data/markets_shard_2.jsonl", "--output-dir", "/data/orderbook"]
+    command: ["collect-orderbook", "--markets-path", "/data/markets_shard_2.jsonl", "--output-dir", "/data/orderbook", "--chunk-size", "100", "--rotate-interval-secs", "300"]
     volumes:
       - ./data:/data
     restart: unless-stopped
 
   collector-3:
     build: .
-    command: ["collect-orderbook", "--markets-path", "/data/markets_shard_3.jsonl", "--output-dir", "/data/orderbook"]
+    command: ["collect-orderbook", "--markets-path", "/data/markets_shard_3.jsonl", "--output-dir", "/data/orderbook", "--chunk-size", "100", "--rotate-interval-secs", "300"]
     volumes:
       - ./data:/data
     restart: unless-stopped
 
   collector-4:
     build: .
-    command: ["collect-orderbook", "--markets-path", "/data/markets_shard_4.jsonl", "--output-dir", "/data/orderbook"]
+    command: ["collect-orderbook", "--markets-path", "/data/markets_shard_4.jsonl", "--output-dir", "/data/orderbook", "--chunk-size", "100", "--rotate-interval-secs", "300"]
     volumes:
       - ./data:/data
     restart: unless-stopped
+
+volumes:
+  localstack_data:

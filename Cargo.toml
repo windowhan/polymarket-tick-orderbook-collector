@@ -20,4 +20,14 @@ urlencoding = "2"
 flate2 = "1"
 hex = "0.4"
 axum = "0.7"
-tower = "0.4"
+tower = "0.5"
+aws-config = "1.5"
+aws-sdk-s3 = "1.49"
+aws-credential-types = "1.2"
+async-trait = "0.1"
+
+[dev-dependencies]
+mockall = "0.13"
+testcontainers = "0.23"
+testcontainers-modules = { version = "0.11", features = ["localstack"] }
+tempfile = "3"

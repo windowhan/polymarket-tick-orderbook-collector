@@ -32,6 +32,9 @@ enum Commands {
         /// Tokens per WebSocket connection (default 30)
         #[arg(long, default_value = "30")]
         chunk_size: usize,
+        /// Seconds between file rotations for local storage (default 300)
+        #[arg(long, default_value = "300")]
+        rotate_interval_secs: u64,
         /// Limit total tokens for load testing
         #[arg(long)]
         limit_tokens: Option<usize>,
@@ -79,6 +82,27 @@ enum Commands {
         #[arg(long, default_value = "data/markets/markets.jsonl")]
         markets_path: PathBuf,
     },
+    /// Aggregate S3 orderbook shards into a single local file
+    AggregateS3 {
+        #[arg(long)]
+        bucket: String,
+        #[arg(long, default_value = "orderbook/")]
+        prefix: String,
+        #[arg(long, default_value = "data/aggregated_orderbook.jsonl")]
+        output_path: PathBuf,
+        #[arg(long, default_value = "us-east-1")]
+        region: String,
+        #[arg(long)]
+        endpoint: Option<String>,
+        #[arg(long)]
+        access_key: Option<String>,
+        #[arg(long)]
+        secret_key: Option<String>,
+        #[arg(long)]
+        delete_after_merge: bool,
+        #[arg(long, default_value = "data/aggregate_manifest.json")]
+        manifest_path: PathBuf,
+    },
 }
 
 #[tokio::main]
@@ -99,6 +123,7 @@ async fn main() -> Result<()> {
             output_dir,
             relay_url,
             chunk_size,
+            rotate_interval_secs,
             limit_tokens,
         } => {
             if !markets_path.exists() {
@@ -125,7 +150,7 @@ async fn main() -> Result<()> {
 
             info!(count = token_ids.len(), chunk_size, relay_url = ?relay_url, "Starting order book collection");
             let collector =
-                polymarket_collector::ws_orderbook::OrderbookCollector::new(token_ids, output_dir, relay_url, chunk_size);
+                polymarket_collector::ws_orderbook::OrderbookCollector::new(token_ids, output_dir, relay_url, chunk_size, std::time::Duration::from_secs(rotate_interval_secs));
             collector.run().await?;
         }
 
@@ -222,6 +247,40 @@ async fn main() -> Result<()> {
             }
             let buckets = polymarket_collector::reward_analyzer::analyze_rewards(&markets_path)?;
             polymarket_collector::reward_analyzer::print_reward_analysis(&buckets);
+        }
+
+        Commands::AggregateS3 {
+            bucket,
+            prefix,
+            output_path,
+            region,
+            endpoint,
+            access_key,
+            secret_key,
+            delete_after_merge,
+            manifest_path,
+        } => {
+            use polymarket_collector::aggregate_s3::{aggregate_s3, write_manifest, AggregateOptions, AwsS3Service};
+
+            let service: Box<dyn polymarket_collector::aggregate_s3::S3Service> =
+                if let (Some(endpoint), Some(access_key), Some(secret_key)) =
+                    (endpoint, access_key, secret_key)
+                {
+                    Box::new(AwsS3Service::from_endpoint(region, endpoint, access_key, secret_key))
+                } else {
+                    Box::new(AwsS3Service::new(region).await)
+                };
+
+            let opts = AggregateOptions {
+                bucket,
+                prefix,
+                output_path,
+                delete_after_merge,
+            };
+
+            let summary = aggregate_s3(service.as_ref(), &opts).await?;
+            write_manifest(&manifest_path, summary, &opts).await?;
+            info!(?summary, "S3 aggregation complete");
         }
     }
 

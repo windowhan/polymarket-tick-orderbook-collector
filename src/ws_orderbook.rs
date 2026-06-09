@@ -8,6 +8,8 @@ use std::time::Duration;
 use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
 use tracing::{info, warn};
 
+use crate::storage::RotatedWriter;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OrderbookEvent {
     pub event_type: String,
@@ -22,21 +24,28 @@ pub struct OrderbookEvent {
 }
 
 /// Spawns multiple parallel WebSocket workers, each responsible for a chunk of tokens.
-/// Polymarket recommends ~30 tokens per connection.
 pub struct OrderbookCollector {
     token_ids: Vec<String>,
     output_dir: PathBuf,
     chunk_size: usize,
     relay_url: Option<String>,
+    rotate_interval: Duration,
 }
 
 impl OrderbookCollector {
-    pub fn new(token_ids: Vec<String>, output_dir: PathBuf, relay_url: Option<String>, chunk_size: usize) -> Self {
+    pub fn new(
+        token_ids: Vec<String>,
+        output_dir: PathBuf,
+        relay_url: Option<String>,
+        chunk_size: usize,
+        rotate_interval: Duration,
+    ) -> Self {
         Self {
             token_ids,
             output_dir,
             chunk_size,
             relay_url,
+            rotate_interval,
         }
     }
 
@@ -51,6 +60,7 @@ impl OrderbookCollector {
             total_tokens = self.token_ids.len(),
             chunks = token_chunks.len(),
             chunk_size = self.chunk_size,
+            rotate_secs = self.rotate_interval.as_secs(),
             relay_url = ?self.relay_url,
             "Starting parallel WebSocket collectors"
         );
@@ -59,8 +69,9 @@ impl OrderbookCollector {
         for (id, chunk) in token_chunks.into_iter().enumerate() {
             let output_dir = self.output_dir.clone();
             let relay_url = self.relay_url.clone();
+            let rotate_interval = self.rotate_interval;
             let handle = tokio::spawn(async move {
-                let mut worker = OrderbookWorker::new(id, chunk, output_dir, relay_url);
+                let mut worker = OrderbookWorker::new(id, chunk, output_dir, relay_url, rotate_interval);
                 if let Err(e) = worker.run().await {
                     warn!(worker_id = id, error = %e, "Worker failed");
                 }
@@ -92,10 +103,18 @@ struct OrderbookWorker {
     flush_interval: Duration,
     buffer_size: usize,
     http_client: reqwest::Client,
+    writer: Option<RotatedWriter>,
+    rotate_interval: Duration,
 }
 
 impl OrderbookWorker {
-    fn new(id: usize, token_ids: Vec<String>, output_dir: PathBuf, relay_url: Option<String>) -> Self {
+    fn new(
+        id: usize,
+        token_ids: Vec<String>,
+        output_dir: PathBuf,
+        relay_url: Option<String>,
+        rotate_interval: Duration,
+    ) -> Self {
         Self {
             id,
             token_ids,
@@ -105,52 +124,63 @@ impl OrderbookWorker {
             flush_interval: Duration::from_secs(60),
             buffer_size: 10_000,
             http_client: reqwest::Client::new(),
+            writer: None,
+            rotate_interval,
         }
+    }
+
+    fn writer(&mut self) -> Result<&mut RotatedWriter> {
+        if self.writer.is_none() {
+            let suffix = format!("_worker_{}", self.id);
+            self.writer = Some(RotatedWriter::new(
+                self.output_dir.clone(),
+                suffix,
+                self.rotate_interval,
+            ));
+        }
+        Ok(self.writer.as_mut().unwrap())
     }
 
     async fn flush(&mut self) -> Result<()> {
         if self.buffer.is_empty() {
             return Ok(());
         }
+        let count = self.buffer.len();
+        let id = self.id;
 
         if let Some(url) = &self.relay_url {
             // Relay mode: send buffered events as newline-delimited JSON
+            let buffer = std::mem::take(&mut self.buffer);
             let mut body = String::new();
-            for ev in &self.buffer {
+            for ev in &buffer {
                 body.push_str(&serde_json::to_string(ev)?);
                 body.push('\n');
             }
             match self.http_client.post(url).body(body).send().await {
                 Ok(resp) if resp.status().is_success() => {
-                    info!(worker_id = self.id, count = self.buffer.len(), "Relayed buffer");
+                    info!(worker_id = id, count, "Relayed buffer");
                 }
                 Ok(resp) => {
-                    warn!(worker_id = self.id, status = %resp.status(), "Relay failed, will retry");
-                    // Don't clear buffer on failure so it retries on next flush
-                    return Ok(());
+                    warn!(worker_id = id, status = %resp.status(), "Relay failed, will retry");
+                    self.buffer = buffer; // restore for retry
                 }
                 Err(e) => {
-                    warn!(worker_id = self.id, error = %e, "Relay request failed");
-                    return Ok(());
+                    warn!(worker_id = id, error = %e, "Relay request failed");
+                    self.buffer = buffer; // restore for retry
                 }
             }
         } else {
-            // Local storage mode
-            let ts = Utc::now();
-            let path = crate::storage::partitioned_path(
-                &self.output_dir,
-                ts,
-                &format!("_worker_{}.jsonl", self.id),
-            );
-            crate::storage::append_jsonl(&path, &self.buffer).await?;
+            // Local storage mode with time-rotated writer
+            let buffer = std::mem::take(&mut self.buffer);
+            let writer = self.writer()?;
+            writer.append(&buffer).await?;
             info!(
-                worker_id = self.id,
-                count = self.buffer.len(),
-                path = %path.display(),
+                worker_id = id,
+                count,
+                path = ?writer.current_path(),
                 "Flushed buffer"
             );
         }
-        self.buffer.clear();
         Ok(())
     }
 
@@ -174,6 +204,9 @@ impl OrderbookWorker {
             }
         }
         self.flush().await?;
+        if let Some(writer) = &mut self.writer {
+            writer.flush().await?;
+        }
         Ok(())
     }
 
@@ -272,7 +305,6 @@ impl OrderbookWorker {
                 }
             }
             "price_change" => {
-                // price_change may contain a `price_changes` array
                 if let Some(changes) = msg.get("price_changes").and_then(|v| v.as_array()) {
                     for change in changes {
                         self.buffer.push(OrderbookEvent {
