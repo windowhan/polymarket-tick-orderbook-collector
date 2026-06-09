@@ -1,0 +1,27 @@
+# ---------------------------------------------------------
+# Polymarket Collector - Terraform Variables Example
+# Copy to terraform.tfvars and customize as needed.
+# ---------------------------------------------------------
+
+# Number of EC2 collector instances.
+# With chunk_size=100, each instance handles ~50 connections.
+# 4 instances cover all 20,000 tokens.
+collector_count = 4
+
+# EC2 instance type. 
+# t3.small  : ~$63/mo total (4x), comfortable headroom
+# t3.micro  : ~$33/mo total (4x), tight but works with chunk_size=100
+collector_instance_type = "t3.small"
+
+# Tokens per WebSocket connection.
+# 100 is the tested sweet spot for stable connections.
+chunk_size = 100
+
+# AWS region
+region = "us-east-1"
+
+# SSH key pair name
+key_name = "your-key-pair"
+
+# S3 bucket for binary and market shard files
+s3_bucket = "your-polymarket-collector-bucket"

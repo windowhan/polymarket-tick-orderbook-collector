@@ -1,0 +1,42 @@
+version: '3.8'
+
+# Local testing setup for distributed WebSocket collection.
+# NOTE: All containers share the same host IP, so this will NOT bypass
+# Polymarket's per-IP connection limits. Use Terraform for real multi-IP
+# distributed deployment across cloud instances.
+
+services:
+  collector-0:
+    build: .
+    command: ["collect-orderbook", "--markets-path", "/data/markets_shard_0.jsonl", "--output-dir", "/data/orderbook"]
+    volumes:
+      - ./data:/data
+    restart: unless-stopped
+
+  collector-1:
+    build: .
+    command: ["collect-orderbook", "--markets-path", "/data/markets_shard_1.jsonl", "--output-dir", "/data/orderbook"]
+    volumes:
+      - ./data:/data
+    restart: unless-stopped
+
+  collector-2:
+    build: .
+    command: ["collect-orderbook", "--markets-path", "/data/markets_shard_2.jsonl", "--output-dir", "/data/orderbook"]
+    volumes:
+      - ./data:/data
+    restart: unless-stopped
+
+  collector-3:
+    build: .
+    command: ["collect-orderbook", "--markets-path", "/data/markets_shard_3.jsonl", "--output-dir", "/data/orderbook"]
+    volumes:
+      - ./data:/data
+    restart: unless-stopped
+
+  collector-4:
+    build: .
+    command: ["collect-orderbook", "--markets-path", "/data/markets_shard_4.jsonl", "--output-dir", "/data/orderbook"]
+    volumes:
+      - ./data:/data
+    restart: unless-stopped
