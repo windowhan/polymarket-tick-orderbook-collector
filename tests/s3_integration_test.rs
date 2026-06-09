@@ -18,6 +18,7 @@ async fn test_aggregate_s3_with_localstack() {
         .behavior_version(aws_config::BehaviorVersion::latest())
         .region(aws_config::Region::new("us-east-1"))
         .endpoint_url(&endpoint)
+        .force_path_style(true)
         .credentials_provider(aws_credential_types::Credentials::new(
             "test", "test", None, None, "test",
         ))
@@ -102,6 +103,7 @@ async fn test_aggregate_s3_empty_prefix() {
         .behavior_version(aws_config::BehaviorVersion::latest())
         .region(aws_config::Region::new("us-east-1"))
         .endpoint_url(&endpoint)
+        .force_path_style(true)
         .credentials_provider(aws_credential_types::Credentials::new(
             "test", "test", None, None, "test",
         ))

@@ -56,6 +56,7 @@ impl AwsS3Service {
             .region(aws_config::Region::new(region.into()))
             .endpoint_url(endpoint.into())
             .credentials_provider(creds)
+            .force_path_style(true)
             .build();
         Self {
             client: Client::from_conf(config),
