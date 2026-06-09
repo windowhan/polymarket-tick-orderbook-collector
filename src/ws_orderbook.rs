@@ -4,6 +4,8 @@ use futures::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
 use tracing::{info, warn};
@@ -30,6 +32,8 @@ pub struct OrderbookCollector {
     chunk_size: usize,
     relay_url: Option<String>,
     rotate_interval: Duration,
+    duration_secs: Option<u64>,
+    shutdown: Arc<AtomicBool>,
 }
 
 impl OrderbookCollector {
@@ -39,6 +43,7 @@ impl OrderbookCollector {
         relay_url: Option<String>,
         chunk_size: usize,
         rotate_interval: Duration,
+        duration_secs: Option<u64>,
     ) -> Self {
         Self {
             token_ids,
@@ -46,6 +51,8 @@ impl OrderbookCollector {
             chunk_size,
             relay_url,
             rotate_interval,
+            duration_secs,
+            shutdown: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -61,6 +68,7 @@ impl OrderbookCollector {
             chunks = token_chunks.len(),
             chunk_size = self.chunk_size,
             rotate_secs = self.rotate_interval.as_secs(),
+            duration_secs = ?self.duration_secs,
             relay_url = ?self.relay_url,
             "Starting parallel WebSocket collectors"
         );
@@ -70,8 +78,9 @@ impl OrderbookCollector {
             let output_dir = self.output_dir.clone();
             let relay_url = self.relay_url.clone();
             let rotate_interval = self.rotate_interval;
+            let shutdown = self.shutdown.clone();
             let handle = tokio::spawn(async move {
-                let mut worker = OrderbookWorker::new(id, chunk, output_dir, relay_url, rotate_interval);
+                let mut worker = OrderbookWorker::new(id, chunk, output_dir, relay_url, rotate_interval, shutdown);
                 if let Err(e) = worker.run().await {
                     warn!(worker_id = id, error = %e, "Worker failed");
                 }
@@ -81,9 +90,22 @@ impl OrderbookCollector {
             tokio::time::sleep(Duration::from_millis(500)).await;
         }
 
-        // Graceful shutdown on Ctrl+C
-        tokio::signal::ctrl_c().await.ok();
-        info!("Shutdown signal received, waiting for workers to flush...");
+        // Graceful shutdown on Ctrl+C or duration timeout
+        if let Some(duration) = self.duration_secs {
+            tokio::select! {
+                _ = tokio::signal::ctrl_c() => {
+                    info!("Ctrl+C received, shutting down...");
+                }
+                _ = tokio::time::sleep(Duration::from_secs(duration)) => {
+                    info!(duration, "Duration reached, shutting down...");
+                }
+            }
+        } else {
+            tokio::signal::ctrl_c().await.ok();
+            info!("Shutdown signal received, waiting for workers to flush...");
+        }
+
+        self.shutdown.store(true, Ordering::Relaxed);
 
         for h in handles {
             let _ = h.await;
@@ -105,6 +127,7 @@ struct OrderbookWorker {
     http_client: reqwest::Client,
     writer: Option<RotatedWriter>,
     rotate_interval: Duration,
+    shutdown: Arc<AtomicBool>,
 }
 
 impl OrderbookWorker {
@@ -114,18 +137,20 @@ impl OrderbookWorker {
         output_dir: PathBuf,
         relay_url: Option<String>,
         rotate_interval: Duration,
+        shutdown: Arc<AtomicBool>,
     ) -> Self {
         Self {
             id,
             token_ids,
             output_dir,
             relay_url,
-            buffer: Vec::with_capacity(10_000),
-            flush_interval: Duration::from_secs(60),
-            buffer_size: 10_000,
+            buffer: Vec::with_capacity(1_000),
+            flush_interval: Duration::from_secs(10),
+            buffer_size: 1_000,
             http_client: reqwest::Client::new(),
             writer: None,
             rotate_interval,
+            shutdown,
         }
     }
 
@@ -229,9 +254,20 @@ impl OrderbookWorker {
 
         let mut flush_tick = tokio::time::interval(self.flush_interval);
         let mut ping_tick = tokio::time::interval(Duration::from_secs(10));
+        let mut shutdown_check = tokio::time::interval(Duration::from_secs(1));
 
         loop {
+            if self.shutdown.load(Ordering::Relaxed) {
+                info!(worker_id = self.id, "Shutdown requested, exiting event loop");
+                break;
+            }
             tokio::select! {
+                _ = shutdown_check.tick() => {
+                    if self.shutdown.load(Ordering::Relaxed) {
+                        info!(worker_id = self.id, "Shutdown confirmed, exiting event loop");
+                        break;
+                    }
+                }
                 msg = read.next() => {
                     match msg {
                         Some(Ok(Message::Text(text))) => {

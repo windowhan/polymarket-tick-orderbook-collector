@@ -1,5 +1,6 @@
 use anyhow::Result;
 use axum::{
+    extract::DefaultBodyLimit,
     extract::State,
     http::StatusCode,
     routing::post,
@@ -83,6 +84,7 @@ pub async fn run(bind: &str, output_path: PathBuf) -> Result<()> {
 
     let app = Router::new()
         .route("/ingest", post(ingest))
+        .layer(DefaultBodyLimit::max(50 * 1024 * 1024))
         .with_state(state);
 
     let listener = tokio::net::TcpListener::bind(bind).await?;
