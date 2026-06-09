@@ -5,4 +5,5 @@ pub mod onchain;
 pub mod reward_analyzer;
 pub mod storage;
 pub mod trade_fetcher;
+pub mod viewer;
 pub mod ws_orderbook;

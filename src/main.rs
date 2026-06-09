@@ -106,6 +106,13 @@ enum Commands {
         #[arg(long, default_value = "data/aggregate_manifest.json")]
         manifest_path: PathBuf,
     },
+    /// Launch a local web viewer for aggregated orderbook data
+    Viewer {
+        #[arg(long, default_value = "data/local_test_aggregated.jsonl")]
+        input_path: PathBuf,
+        #[arg(long, default_value = "127.0.0.1:3000")]
+        bind: String,
+    },
 }
 
 #[tokio::main]
@@ -285,6 +292,14 @@ async fn main() -> Result<()> {
             let summary = aggregate_s3(service.as_ref(), &opts).await?;
             write_manifest(&manifest_path, summary, &opts).await?;
             info!(?summary, "S3 aggregation complete");
+        }
+
+        Commands::Viewer { input_path, bind } => {
+            if !input_path.exists() {
+                anyhow::bail!("Input file not found: {}", input_path.display());
+            }
+            info!(path = %input_path.display(), bind = %bind, "Starting viewer");
+            polymarket_collector::viewer::run(&input_path, &bind).await?;
         }
     }
 

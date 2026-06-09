@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Polymarket Viewer</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { font-family: -apple-system, sans-serif; margin: 20px; background: #0d1117; color: #c9d1d9; }
+        h1 { font-size: 20px; margin-bottom: 10px; }
+        select { font-size: 14px; padding: 8px 12px; margin-bottom: 20px; background: #21262d; color: #c9d1d9; border: 1px solid #30363d; border-radius: 6px; }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+        .card { background: #161b22; padding: 16px; border-radius: 8px; border: 1px solid #30363d; }
+        table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        th, td { padding: 6px 8px; text-align: left; border-bottom: 1px solid #30363d; }
+        th { color: #8b949e; font-weight: 500; }
+        .bid { color: #3fb950; }
+        .ask { color: #f85149; }
+        h2 { margin-top: 0; font-size: 14px; color: #8b949e; text-transform: uppercase; letter-spacing: 0.5px; }
+        .empty { color: #484f58; font-style: italic; padding: 20px 0; }
+    </style>
+</head>
+<body>
+    <h1>Polymarket Orderbook Viewer</h1>
+    <select id="marketSelect"><option>Loading markets...</option></select>
+    
+    <div class="grid">
+        <div class="card">
+            <h2>Price History</h2>
+            <canvas id="priceChart"></canvas>
+        </div>
+        <div class="card">
+            <h2>Recent Trades</h2>
+            <table id="tradesTable">
+                <thead><tr><th>Time</th><th>Price</th><th>Size</th></tr></thead>
+                <tbody></tbody>
+            </table>
+        </div>
+    </div>
+
+<script>
+let priceChart = null;
+
+async function loadMarkets() {
+    try {
+        const res = await fetch('/api/markets');
+        const markets = await res.json();
+        const sel = document.getElementById('marketSelect');
+        if (markets.length === 0) {
+            sel.innerHTML = '<option>No markets found</option>';
+            return;
+        }
+        sel.innerHTML = markets.map(m => `<option value="${m}">${m.slice(0,20)}...</option>`).join('');
+        sel.onchange = () => loadMarket(sel.value);
+        loadMarket(markets[0]);
+    } catch (e) {
+        document.getElementById('marketSelect').innerHTML = '<option>Error loading markets</option>';
+    }
+}
+
+async function loadMarket(asset) {
+    const [phRes, trRes] = await Promise.all([
+        fetch('/api/price_history/' + encodeURIComponent(asset)),
+        fetch('/api/trades/' + encodeURIComponent(asset))
+    ]);
+    const history = await phRes.json();
+    const trades = await trRes.json();
+    updateChart(history);
+    updateTrades(trades);
+}
+
+function updateChart(history) {
+    const ctx = document.getElementById('priceChart').getContext('2d');
+    if (history.length === 0) {
+        if (priceChart) { priceChart.destroy(); priceChart = null; }
+        ctx.canvas.parentNode.innerHTML = '<p class="empty">No price data</p>';
+        return;
+    }
+    const labels = history.map(p => new Date(p.timestamp).toLocaleTimeString());
+    const data = history.map(p => p.price);
+    
+    if (priceChart) priceChart.destroy();
+    priceChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: 'Price',
+                data: data,
+                borderColor: '#58a6ff',
+                backgroundColor: 'rgba(88,166,255,0.1)',
+                fill: true,
+                tension: 0.2,
+                pointRadius: 1,
+                borderWidth: 1.5
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+                x: { ticks: { color: '#8b949e', maxTicksLimit: 6 }, grid: { color: '#21262d' } },
+                y: { ticks: { color: '#8b949e' }, grid: { color: '#21262d' } }
+            }
+        }
+    });
+}
+
+function updateTrades(trades) {
+    const tbody = document.querySelector('#tradesTable tbody');
+    if (trades.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="3" class="empty">No trades</td></tr>';
+        return;
+    }
+    const rows = trades.slice(-20).reverse().map(t => {
+        const time = new Date(t.timestamp).toLocaleTimeString();
+        return `<tr><td>${time}</td><td>${t.price.toFixed(4)}</td><td>${t.size != null ? t.size.toFixed(2) : '-'}</td></tr>`;
+    }).join('');
+    tbody.innerHTML = rows;
+}
+
+loadMarkets();
+</script>
+</body>
+</html>
