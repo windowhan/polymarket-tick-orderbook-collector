@@ -22,6 +22,7 @@ hex = "0.4"
 axum = "0.7"
 tower = "0.5"
 tower-http = { version = "0.6", features = ["fs"] }
+rayon = "1.10"
 aws-config = "1.5"
 aws-sdk-s3 = "1.49"
 aws-credential-types = "1.2"
