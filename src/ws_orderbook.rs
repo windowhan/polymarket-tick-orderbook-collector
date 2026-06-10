@@ -301,7 +301,41 @@ impl OrderbookWorker {
         Ok(())
     }
 
+    /// Parse a single WebSocket text message and push an `OrderbookEvent` to the buffer.
+    ///
+    /// This is the core message handler for all Polymarket WebSocket events.
+    /// It handles three event types:
+    /// - `"book"` — Full orderbook snapshot (bids + asks)
+    /// - `"price_change"` — Midpoint price update
+    /// - `"last_trade_price"` — On-chain trade fill
+    ///
+    /// # Arguments
+    /// * `text` — The raw WebSocket text frame (JSON string)
+    ///
+    /// # Returns
+    /// `Ok(())` if the message was parsed and buffered successfully.
+    /// `Err` if JSON parsing fails or required fields are missing.
+    ///
+    /// # Side Effects
+    /// Pushes one or more `OrderbookEvent`s to `self.buffer`. When the buffer reaches
+    /// `self.buffer_size`, it is automatically flushed to disk or relay.
+    ///
+    /// # Example — Input / Output
+    /// ```rust,ignore
+    /// // Input: raw WebSocket text frame
+    /// let text = r#"{"event_type":"last_trade_price","asset_id":"123...","price":"0.084","size":"110.476189","side":"BUY","timestamp":"1781051970651"}"#;
+    ///
+    /// // Function call
+    /// worker.handle_message(text).unwrap();
+    ///
+    /// // Output: buffer now contains an OrderbookEvent
+    /// assert_eq!(worker.buffer.len(), 1);
+    /// assert_eq!(worker.buffer[0].event_type, "last_trade");
+    /// assert_eq!(worker.buffer[0].price, Some(0.084));
+    /// assert_eq!(worker.buffer[0].side, Some("BUY".to_string()));
+    /// ```
     fn handle_message(&mut self, text: &str) -> Result<()> {
+        // Capture the local receive timestamp for latency tracking.
         let received_at = Utc::now().timestamp_millis();
         let msg: serde_json::Value = serde_json::from_str(text)?;
 
@@ -312,6 +346,11 @@ impl OrderbookWorker {
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string();
+
+        // Polymarket sometimes sends price/size as strings (e.g. "0.05").
+        let parse_f64 = |v: Option<&serde_json::Value>| -> Option<f64> {
+            v.and_then(|v| v.as_f64().or_else(|| v.as_str().and_then(|s| s.parse().ok())))
+        };
 
         match msg_type {
             "book" => {
@@ -326,8 +365,8 @@ impl OrderbookWorker {
                                 } else {
                                     "ask".to_string()
                                 }),
-                                price: level.get("price").and_then(|v| v.as_f64()),
-                                size: level.get("size").and_then(|v| v.as_f64()),
+                                price: parse_f64(level.get("price")),
+                                size: parse_f64(level.get("size")),
                                 timestamp: msg
                                     .get("timestamp")
                                     .and_then(|v| v.as_i64())
@@ -343,15 +382,21 @@ impl OrderbookWorker {
             "price_change" => {
                 if let Some(changes) = msg.get("price_changes").and_then(|v| v.as_array()) {
                     for change in changes {
+                        let change_asset = change
+                            .get("asset_id")
+                            .or_else(|| change.get("token_id"))
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string();
                         self.buffer.push(OrderbookEvent {
                             event_type: "price_change".to_string(),
-                            asset: asset.clone(),
+                            asset: change_asset,
                             side: change
                                 .get("side")
                                 .and_then(|v| v.as_str())
                                 .map(|s| s.to_string()),
-                            price: change.get("price").and_then(|v| v.as_f64()),
-                            size: change.get("size").and_then(|v| v.as_f64()),
+                            price: parse_f64(change.get("price")),
+                            size: parse_f64(change.get("size")),
                             timestamp: msg
                                 .get("timestamp")
                                 .and_then(|v| v.as_i64())
@@ -366,8 +411,8 @@ impl OrderbookWorker {
                         event_type: "price_change".to_string(),
                         asset: asset.clone(),
                         side: msg.get("side").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                        price: msg.get("price").and_then(|v| v.as_f64()),
-                        size: msg.get("size").and_then(|v| v.as_f64()),
+                        price: parse_f64(msg.get("price")),
+                        size: parse_f64(msg.get("size")),
                         timestamp: msg
                             .get("timestamp")
                             .and_then(|v| v.as_i64())
@@ -378,18 +423,55 @@ impl OrderbookWorker {
                     });
                 }
             }
+            // ── Last Trade Price Event ────────────────────────────────────
+            // Emitted by Polymarket's WebSocket when an on-chain fill occurs.
+            // Contains the trade price, size, direction (BUY/SELL), and crucially
+            // the transaction_hash which lets us look up maker/taker on Polygon.
+            //
+            // Example input — raw WebSocket message:
+            // {
+            //   "event_type": "last_trade_price",
+            //   "asset_id": "400737005616952...",
+            //   "price": "0.084",
+            //   "size": "110.476189",
+            //   "side": "BUY",
+            //   "transaction_hash": "0x5e5fe7c64a30b1d23366bf508ea288b994e3b3d8d5afd5facd991af8551dae02",
+            //   "timestamp": "1781051970651"
+            // }
+            //
+            // Example output — OrderbookEvent pushed to buffer:
+            // OrderbookEvent {
+            //     event_type: "last_trade",
+            //     asset: "40073700561695212653451049120779209383948898865772011302940523990213422296817",
+            //     side: Some("BUY"),
+            //     price: Some(0.084),
+            //     size: Some(110.476189),
+            //     timestamp: 1781051970651,
+            //     received_at: 1781051970699,
+            //     raw: "{...original JSON text...}",
+            //     worker_id: 3,
+            // }
             "last_trade_price" => {
                 self.buffer.push(OrderbookEvent {
                     event_type: "last_trade".to_string(),
                     asset: asset.clone(),
-                    side: None,
-                    price: msg.get("price").and_then(|v| v.as_f64()),
-                    size: msg.get("size").and_then(|v| v.as_f64()),
+                    // Parse the trade direction: "BUY" = buyer was the taker (aggressive),
+                    // "SELL" = seller was the taker. The opposite side was the resting maker.
+                    side: msg.get("side").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                    // Price and size may be sent as strings (e.g., "0.084") rather than numbers.
+                    // parse_f64 handles both via as_f64() fallback to as_str().parse().
+                    price: parse_f64(msg.get("price")),
+                    size: parse_f64(msg.get("size")),
+                    // Use the event's own timestamp if present, otherwise fall back to
+                    // our local receive time. This ensures chronological ordering even
+                    // if the WebSocket message is slightly delayed.
                     timestamp: msg
                         .get("timestamp")
                         .and_then(|v| v.as_i64())
                         .unwrap_or(received_at),
                     received_at,
+                    // Store the full raw JSON text. This preserves fields we don't explicitly
+                    // extract (like transaction_hash) for downstream parsing by the viewer.
                     raw: text.to_string(),
                     worker_id: self.id,
                 });
