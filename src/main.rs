@@ -112,6 +112,8 @@ enum Commands {
         input_path: PathBuf,
         #[arg(long, default_value = "127.0.0.1:3000")]
         bind: String,
+        #[arg(long, default_value = "https://polygon.drpc.org")]
+        rpc_url: String,
     },
 }
 
@@ -294,12 +296,12 @@ async fn main() -> Result<()> {
             info!(?summary, "S3 aggregation complete");
         }
 
-        Commands::Viewer { input_path, bind } => {
+        Commands::Viewer { input_path, bind, rpc_url } => {
             if !input_path.exists() {
                 anyhow::bail!("Input file not found: {}", input_path.display());
             }
-            info!(path = %input_path.display(), bind = %bind, "Starting viewer");
-            polymarket_collector::viewer::run(&input_path, &bind).await?;
+            info!(path = %input_path.display(), bind = %bind, rpc = %rpc_url, "Starting viewer");
+            polymarket_collector::viewer::run(&input_path, &bind, Some(rpc_url)).await?;
         }
     }
 
