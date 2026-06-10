@@ -2,45 +2,140 @@
 <html>
 <head>
     <meta charset="utf-8">
-    <title>Polymarket Viewer</title>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <title>Polymarket Orderbook Viewer</title>
     <style>
-        body { font-family: -apple-system, sans-serif; margin: 20px; background: #0d1117; color: #c9d1d9; }
-        h1 { font-size: 20px; margin-bottom: 10px; }
-        select { font-size: 14px; padding: 8px 12px; margin-bottom: 20px; background: #21262d; color: #c9d1d9; border: 1px solid #30363d; border-radius: 6px; }
-        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-        @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
-        .card { background: #161b22; padding: 16px; border-radius: 8px; border: 1px solid #30363d; }
+        * { box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; margin: 0; padding: 16px; background: #0d1117; color: #c9d1d9; }
+        h1 { font-size: 18px; margin: 0 0 12px 0; }
+        select { font-size: 14px; padding: 8px 12px; margin-bottom: 16px; background: #21262d; color: #c9d1d9; border: 1px solid #30363d; border-radius: 6px; width: 100%; max-width: 400px; }
+        .card { background: #161b22; padding: 14px; border-radius: 8px; border: 1px solid #30363d; }
+        .card h2 { margin: 0 0 10px 0; font-size: 13px; color: #8b949e; text-transform: uppercase; letter-spacing: 0.5px; }
+        .timeline { margin-top: 16px; }
+        .timeline h2 { display: flex; justify-content: space-between; align-items: center; }
+        #timeLabel { font-family: monospace; font-size: 12px; color: #58a6ff; text-transform: none; letter-spacing: 0; }
+        input[type=range] { width: 100%; cursor: pointer; }
         table { width: 100%; border-collapse: collapse; font-size: 13px; }
-        th, td { padding: 6px 8px; text-align: left; border-bottom: 1px solid #30363d; }
+        th, td { padding: 5px 8px; text-align: left; border-bottom: 1px solid #21262d; }
         th { color: #8b949e; font-weight: 500; }
-        .bid { color: #3fb950; }
-        .ask { color: #f85149; }
-        h2 { margin-top: 0; font-size: 14px; color: #8b949e; text-transform: uppercase; letter-spacing: 0.5px; }
-        .empty { color: #484f58; font-style: italic; padding: 20px 0; }
+        .ask { color: #f85149; font-weight: 600; }
+        .bid { color: #3fb950; font-weight: 600; }
+        .empty { color: #484f58; font-style: italic; padding: 16px 0; text-align: center; }
+        .trades-wrap { max-height: none; overflow-y: auto; flex: 1; }
+        .orderbook-wrap { max-height: 240px; overflow-y: auto; }
+        .spread-divider {
+            background: #21262d;
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            padding: 8px 14px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-family: monospace;
+            font-size: 13px;
+            margin: 0;
+        }
+        .spread-label { color: #8b949e; }
+        .spread-value { color: #e3b341; font-weight: 600; }
+        .spread-arrow { color: #484f58; }
+
+        /* Main layout: left = orderbook, right = trades */
+        .main-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+            align-items: start;
+        }
+        .orderbook-col {
+            display: flex;
+            flex-direction: column;
+        }
+        .orderbook-col .card { margin-bottom: 0; }
+        .orderbook-col .card + .card { margin-top: 0; }
+        .trades-col {
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+        }
+        .trades-col .card {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            margin-bottom: 0;
+        }
     </style>
 </head>
 <body>
     <h1>Polymarket Orderbook Viewer</h1>
     <select id="marketSelect"><option>Loading markets...</option></select>
-    
-    <div class="grid">
-        <div class="card">
-            <h2>Price History</h2>
-            <canvas id="priceChart"></canvas>
+
+    <div class="main-grid">
+        <!-- Left: Orderbook -->
+        <div class="orderbook-col">
+            <div class="card">
+                <h2>Asks (Sell)</h2>
+                <div class="orderbook-wrap" id="asksWrap">
+                    <table id="asksTable">
+                        <thead><tr><th>Price</th><th>Size</th></tr></thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="spread-divider" id="spreadDivider">
+                <span class="spread-label">Best Ask</span>
+                <span>
+                    <span class="ask" id="bestAsk">—</span>
+                    <span class="spread-arrow"> ←→ </span>
+                    <span class="bid" id="bestBid">—</span>
+                </span>
+                <span class="spread-label">Best Bid</span>
+                <span class="spread-value" id="spreadValue">Spread —</span>
+            </div>
+
+            <div class="card">
+                <h2>Bids (Buy)</h2>
+                <div class="orderbook-wrap" id="bidsWrap">
+                    <table id="bidsTable">
+                        <thead><tr><th>Price</th><th>Size</th></tr></thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
         </div>
-        <div class="card">
-            <h2>Recent Trades</h2>
-            <table id="tradesTable">
-                <thead><tr><th>Time</th><th>Price</th><th>Size</th></tr></thead>
-                <tbody></tbody>
-            </table>
+
+        <!-- Right: Trades -->
+        <div class="trades-col">
+            <div class="card">
+                <h2>Trades (≤ selected time)</h2>
+                <div class="trades-wrap">
+                    <table id="tradesTable">
+                        <thead><tr><th>Time</th><th>Side</th><th>Price</th><th>Size</th><th>Tx</th></tr></thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+                <div id="tradeDetail" style="display:none; margin-top:10px; padding:10px; background:#0d1117; border:1px solid #30363d; border-radius:6px; font-family:monospace; font-size:12px;">
+                    <div style="color:#8b949e; margin-bottom:6px;">On-chain Details</div>
+                    <div id="tradeDetailContent"></div>
+                </div>
+            </div>
         </div>
     </div>
 
-<script>
-let priceChart = null;
+    <!-- Timeline at bottom -->
+    <div class="card timeline">
+        <h2>Timeline <span id="timeLabel">—</span></h2>
+        <input type="range" id="timelineSlider" min="0" max="0" value="0">
+    </div>
 
+<script>
+// Global state for the currently selected market.
+// Populated by loadMarket() with data from /api/book_snapshots/:asset and /api/trades/:asset.
+let currentData = { snapshots: [], trades: [] };
+
+/**
+ * Fetch the list of available markets from /api/markets and populate the dropdown.
+ * Automatically loads the first market after populating.
+ */
 async function loadMarkets() {
     try {
         const res = await fetch('/api/markets');
@@ -50,7 +145,8 @@ async function loadMarkets() {
             sel.innerHTML = '<option>No markets found</option>';
             return;
         }
-        sel.innerHTML = markets.map(m => `<option value="${m}">${m.slice(0,20)}...</option>`).join('');
+        // Truncate long asset IDs for display (first 24 chars + "...")
+        sel.innerHTML = markets.map(m => `<option value="${m}">${m.slice(0,24)}...</option>`).join('');
         sel.onchange = () => loadMarket(sel.value);
         loadMarket(markets[0]);
     } catch (e) {
@@ -58,66 +154,206 @@ async function loadMarkets() {
     }
 }
 
+/**
+ * Load book snapshots and trades for a specific asset in parallel.
+ *
+ * @param {string} asset — The Polymarket asset/token ID
+ */
 async function loadMarket(asset) {
-    const [phRes, trRes] = await Promise.all([
-        fetch('/api/price_history/' + encodeURIComponent(asset)),
+    const [snapRes, trRes] = await Promise.all([
+        fetch('/api/book_snapshots/' + encodeURIComponent(asset)),
         fetch('/api/trades/' + encodeURIComponent(asset))
     ]);
-    const history = await phRes.json();
-    const trades = await trRes.json();
-    updateChart(history);
-    updateTrades(trades);
+    const snapJson = await snapRes.json();
+    currentData.snapshots = snapJson.snapshots;
+    currentData.trades = await trRes.json();
+
+    updateSlider();
+    onSliderChange();
 }
 
-function updateChart(history) {
-    const ctx = document.getElementById('priceChart').getContext('2d');
-    if (history.length === 0) {
-        if (priceChart) { priceChart.destroy(); priceChart = null; }
-        ctx.canvas.parentNode.innerHTML = '<p class="empty">No price data</p>';
+/**
+ * Configure the timeline slider based on the number of available snapshots.
+ * Defaults to the latest (rightmost) position.
+ */
+function updateSlider() {
+    const slider = document.getElementById('timelineSlider');
+    const max = Math.max(0, currentData.snapshots.length - 1);
+    slider.max = max;
+    slider.value = max;
+    slider.oninput = onSliderChange;
+}
+
+/**
+ * Called when the timeline slider moves or the market changes.
+ * Updates the orderbook display and trade filter for the selected timestamp.
+ */
+function onSliderChange() {
+    const idx = parseInt(document.getElementById('timelineSlider').value);
+    const snapshot = currentData.snapshots[idx];
+
+    const label = document.getElementById('timeLabel');
+    if (snapshot) {
+        label.textContent = new Date(snapshot.timestamp).toLocaleString();
+    } else {
+        label.textContent = 'No snapshot';
+    }
+
+    updateOrderbook(snapshot);
+    updateTrades(snapshot ? snapshot.timestamp : Infinity);
+}
+
+/**
+ * Render the Asks/Bids tables and spread divider for a given snapshot.
+ *
+ * Display logic:
+ * - Asks: sorted descending (expensive → cheap). Show only cheapest 20 (slice(-20))
+ *         and auto-scroll to bottom so spread-adjacent levels are visible.
+ * - Bids: sorted descending (high → low). Show only highest 20 (slice(0, 20)).
+ * - Best Ask = cheapest ask price (asks[asks.length - 1])
+ * - Best Bid = highest bid price (bids[0])
+ * - Spread = bestAsk - bestBid
+ *
+ * @param {Object|null} snapshot — BookSnapshot with bids[] and asks[] arrays
+ */
+function updateOrderbook(snapshot) {
+    const asksBody = document.querySelector('#asksTable tbody');
+    const bidsBody = document.querySelector('#bidsTable tbody');
+    const bestAskEl = document.getElementById('bestAsk');
+    const bestBidEl = document.getElementById('bestBid');
+    const spreadEl = document.getElementById('spreadValue');
+    const asksWrap = document.getElementById('asksWrap');
+
+    if (!snapshot) {
+        asksBody.innerHTML = '<tr><td colspan="2" class="empty">No data</td></tr>';
+        bidsBody.innerHTML = '<tr><td colspan="2" class="empty">No data</td></tr>';
+        bestAskEl.textContent = '—';
+        bestBidEl.textContent = '—';
+        spreadEl.textContent = 'Spread —';
         return;
     }
-    const labels = history.map(p => new Date(p.timestamp).toLocaleTimeString());
-    const data = history.map(p => p.price);
-    
-    if (priceChart) priceChart.destroy();
-    priceChart = new Chart(ctx, {
-        type: 'line',
-        data: {
-            labels: labels,
-            datasets: [{
-                label: 'Price',
-                data: data,
-                borderColor: '#58a6ff',
-                backgroundColor: 'rgba(88,166,255,0.1)',
-                fill: true,
-                tension: 0.2,
-                pointRadius: 1,
-                borderWidth: 1.5
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: { legend: { display: false } },
-            scales: {
-                x: { ticks: { color: '#8b949e', maxTicksLimit: 6 }, grid: { color: '#21262d' } },
-                y: { ticks: { color: '#8b949e' }, grid: { color: '#21262d' } }
-            }
-        }
-    });
+
+    // ── Asks (Sell) ──────────────────────────────────────────────────
+    // Sort descending: [0.99, 0.98, ..., 0.16]. We only show the cheapest 20
+    // (slice(-20)) which are closest to the spread. Since the cheapest is at
+    // the bottom of the table, we auto-scroll to the bottom.
+    const asks = [...snapshot.asks].sort((a, b) => b.price - a.price);
+    const askLevels = asks.slice(-20);
+    asksBody.innerHTML = askLevels.length
+        ? askLevels.map(l => `<tr><td class="ask">${l.price.toFixed(4)}</td><td>${l.size.toFixed(2)}</td></tr>`).join('')
+        : '<tr><td colspan="2" class="empty">No asks</td></tr>';
+
+    // Auto-scroll asks to bottom so the cheapest (spread-adjacent) levels are visible.
+    if (asksWrap) {
+        requestAnimationFrame(() => {
+            asksWrap.scrollTop = asksWrap.scrollHeight;
+        });
+    }
+
+    // ── Bids (Buy) ───────────────────────────────────────────────────
+    // Sort descending: [0.15, 0.14, ..., 0.01]. Show highest 20 (closest to spread).
+    const bids = [...snapshot.bids].sort((a, b) => b.price - a.price);
+    const bidLevels = bids.slice(0, 20);
+    bidsBody.innerHTML = bidLevels.length
+        ? bidLevels.map(l => `<tr><td class="bid">${l.price.toFixed(4)}</td><td>${l.size.toFixed(2)}</td></tr>`).join('')
+        : '<tr><td colspan="2" class="empty">No bids</td></tr>';
+
+    // ── Spread Divider ───────────────────────────────────────────────
+    // Best Ask = cheapest ask (minimum price someone will sell at)
+    // Best Bid = highest bid (maximum price someone will buy at)
+    const bestAsk = asks.length > 0 ? asks[asks.length - 1].price : null;
+    const bestBid = bids.length > 0 ? bids[0].price : null;
+
+    bestAskEl.textContent = bestAsk !== null ? bestAsk.toFixed(4) : '—';
+    bestBidEl.textContent = bestBid !== null ? bestBid.toFixed(4) : '—';
+
+    if (bestAsk !== null && bestBid !== null) {
+        const spread = bestAsk - bestBid;
+        spreadEl.textContent = `Spread ${spread.toFixed(4)}`;
+    } else {
+        spreadEl.textContent = 'Spread —';
+    }
 }
 
-function updateTrades(trades) {
+/**
+ * Render the trades table, filtering to only trades at or before the selected timestamp.
+ *
+ * Shows the most recent 20 trades (slice(-20).reverse()) so the latest fills appear at top.
+ * Each row includes: Time, Side (BUY=green/SELL=red), Price, Size, and a clickable Tx hash.
+ *
+ * @param {number} maxTimestamp — Only show trades with timestamp <= this value
+ */
+function updateTrades(maxTimestamp) {
     const tbody = document.querySelector('#tradesTable tbody');
-    if (trades.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="3" class="empty">No trades</td></tr>';
+    // Filter trades to those occurring at or before the selected snapshot time.
+    const filtered = currentData.trades.filter(t => t.timestamp <= maxTimestamp);
+
+    if (filtered.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" class="empty">No trades</td></tr>';
         return;
     }
-    const rows = trades.slice(-20).reverse().map(t => {
+
+    // Show last 20 trades, reversed so newest is at top.
+    const rows = filtered.slice(-20).reverse().map(t => {
         const time = new Date(t.timestamp).toLocaleTimeString();
-        return `<tr><td>${time}</td><td>${t.price.toFixed(4)}</td><td>${t.size != null ? t.size.toFixed(2) : '-'}</td></tr>`;
+        const sideClass = t.side === 'BUY' ? 'bid' : t.side === 'SELL' ? 'ask' : '';
+        const sideLabel = t.side || '-';
+        // Truncate tx hash for display: 0x1234…abcd
+        const txShort = t.tx_hash ? t.tx_hash.slice(0,6) + '…' + t.tx_hash.slice(-4) : '-';
+        const txCell = t.tx_hash
+            ? `<a href="#" style="color:#58a6ff; text-decoration:none;" onclick="event.preventDefault(); showTradeDetail('${t.tx_hash}');">${txShort}</a>`
+            : '-';
+        return `<tr style="cursor:pointer;" onclick="${t.tx_hash ? `showTradeDetail('${t.tx_hash}')` : ''}">
+            <td>${time}</td>
+            <td class="${sideClass}">${sideLabel}</td>
+            <td>${t.price.toFixed(4)}</td>
+            <td>${t.size != null ? t.size.toFixed(2) : '-'}</td>
+            <td>${txCell}</td>
+        </tr>`;
     }).join('');
     tbody.innerHTML = rows;
+}
+
+/**
+ * Fetch and display on-chain trade details for a given transaction hash.
+ *
+ * Calls `/api/trade_detail/:tx_hash` which queries the Polygon RPC
+ * for the transaction receipt, decodes the OrderFilled event log,
+ * and returns maker/taker addresses, block number, and fee.
+ *
+ * Results are server-side cached — repeated clicks on the same tx are instant.
+ *
+ * @param {string} txHash — The Polygon transaction hash (0x-prefixed, 66 chars)
+ *
+ * Example input:  "0x5e5fe7c64a30b1d23366bf508ea288b994e3b3d8d5afd5facd991af8551dae02"
+ * Example output UI:
+ *   Block: 88231325
+ *   Maker: 0x448861155279dbf833d041b963e3ac854599e319 ↗
+ *   Taker: 0x6f3c1ddc97c9abfb38ff0f1302a56a1946d04c6f ↗
+ */
+async function showTradeDetail(txHash) {
+    const detailEl = document.getElementById('tradeDetail');
+    const contentEl = document.getElementById('tradeDetailContent');
+    detailEl.style.display = 'block';
+    contentEl.innerHTML = '<span style="color:#8b949e;">Loading…</span>';
+
+    try {
+        const res = await fetch('/api/trade_detail/' + txHash);
+        const data = await res.json();
+        if (!data) {
+            contentEl.innerHTML = '<span style="color:#f85149;">No OrderFilled event found for this tx</span>';
+            return;
+        }
+        contentEl.innerHTML = `
+            <div style="margin-bottom:4px;">Block: <span style="color:#e3b341;">${data.block_number}</span></div>
+            <div style="margin-bottom:4px;">Maker: <span style="color:#3fb950;">${data.maker}</span> <a href="https://polygonscan.com/address/${data.maker}" target="_blank" style="color:#58a6ff;">↗</a></div>
+            <div style="margin-bottom:4px;">Taker: <span style="color:#f85149;">${data.taker}</span> <a href="https://polygonscan.com/address/${data.taker}" target="_blank" style="color:#58a6ff;">↗</a></div>
+            <div style="margin-bottom:4px;">Token: ${data.token_id.slice(0,20)}…</div>
+            <div>Fee: ${data.fee}</div>
+        `;
+    } catch (e) {
+        contentEl.innerHTML = '<span style="color:#f85149;">Error: ' + e.message + '</span>';
+    }
 }
 
 loadMarkets();
