@@ -86,6 +86,9 @@ pub struct RotatedWriter {
     rotate_interval: Duration,
     current_window: Option<DateTime<Utc>>,
     current_file: Option<tokio::fs::File>,
+    /// Path of the file that was just closed by the most recent rotation.
+    /// Consumed by `take_rotated_path`.
+    rotated_path: Option<PathBuf>,
 }
 
 impl RotatedWriter {
@@ -96,6 +99,7 @@ impl RotatedWriter {
             rotate_interval,
             current_window: None,
             current_file: None,
+            rotated_path: None,
         }
     }
 
@@ -116,8 +120,12 @@ impl RotatedWriter {
     }
 
     async fn rotate_to(&mut self, window: DateTime<Utc>) -> Result<()> {
-        if let Some(mut file) = self.current_file.take() {
-            file.flush().await?;
+        if let Some(current_window) = self.current_window.take() {
+            let prev_path = self.window_path(current_window);
+            if let Some(mut file) = self.current_file.take() {
+                file.flush().await?;
+            }
+            self.rotated_path = Some(prev_path);
         }
         let path = self.window_path(window);
         if let Some(parent) = path.parent() {
@@ -165,6 +173,14 @@ impl RotatedWriter {
     pub fn current_path(&self) -> Option<PathBuf> {
         self.current_window.map(|w| self.window_path(w))
     }
+
+    /// Return and clear the path of the file closed by the most recent rotation.
+    ///
+    /// This is used by callers to upload or archive a completed file after the
+    /// writer has moved to a new time window.
+    pub fn take_rotated_path(&mut self) -> Option<PathBuf> {
+        self.rotated_path.take()
+    }
 }
 
 #[cfg(test)]
@@ -182,14 +198,15 @@ mod tests {
         assert_eq!(floored.second(), 0);
     }
 
+    #[derive(Serialize)]
+    struct Rec {
+        v: i32,
+    }
+
     #[tokio::test]
     async fn test_rotated_writer_creates_separate_windows() {
         let dir = tempdir().unwrap();
         let mut writer = RotatedWriter::new(dir.path().to_path_buf(), "", Duration::from_secs(60));
-        #[derive(Serialize)]
-        struct Rec {
-            v: i32,
-        }
         // two writes within same minute => same file
         writer.append(&[Rec { v: 1 }]).await.unwrap();
         writer.append(&[Rec { v: 2 }]).await.unwrap();
@@ -206,5 +223,21 @@ mod tests {
         let content2 = tokio::fs::read_to_string(&path2).await.unwrap();
         assert!(content1.contains("1"));
         assert!(content2.contains("3"));
+    }
+
+    #[tokio::test]
+    async fn test_rotated_writer_exposes_rotated_path() {
+        let dir = tempdir().unwrap();
+        let mut writer = RotatedWriter::new(dir.path().to_path_buf(), "_w0", Duration::from_secs(60));
+
+        writer.append(&[Rec { v: 1 }]).await.unwrap();
+        let first_path = writer.current_path().unwrap().clone();
+
+        // Simulate crossing into the next minute window.
+        let next_window = writer.current_window.unwrap() + chrono::Duration::minutes(1);
+        writer.rotate_to(next_window).await.unwrap();
+
+        assert_eq!(writer.take_rotated_path(), Some(first_path));
+        assert!(writer.take_rotated_path().is_none());
     }
 }

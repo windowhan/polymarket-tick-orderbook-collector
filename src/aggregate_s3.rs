@@ -24,6 +24,7 @@ pub struct S3Object {
 pub trait S3Service: Send + Sync {
     async fn list_objects(&self, bucket: &str, prefix: &str) -> Result<Vec<S3Object>>;
     async fn get_object(&self, bucket: &str, key: &str) -> Result<Vec<u8>>;
+    async fn put_object(&self, bucket: &str, key: &str, body: Vec<u8>) -> Result<()>;
     async fn delete_object(&self, bucket: &str, key: &str) -> Result<()>;
 }
 
@@ -105,6 +106,18 @@ impl S3Service for AwsS3Service {
         Ok(body.into_bytes().to_vec())
     }
 
+    async fn put_object(&self, bucket: &str, key: &str, body: Vec<u8>) -> Result<()> {
+        self.client
+            .put_object()
+            .bucket(bucket)
+            .key(key)
+            .body(body.into())
+            .send()
+            .await
+            .with_context(|| format!("put_object failed for {}/{}", bucket, key))?;
+        Ok(())
+    }
+
     async fn delete_object(&self, bucket: &str, key: &str) -> Result<()> {
         self.client
             .delete_object()
@@ -146,6 +159,12 @@ impl S3Service for InMemoryS3Service {
             .get(key)
             .cloned()
             .with_context(|| format!("object not found: {}", key))
+    }
+
+    async fn put_object(&self, _bucket: &str, key: &str, body: Vec<u8>) -> Result<()> {
+        let mut guard = self.objects.lock().unwrap();
+        guard.insert(key.to_string(), body);
+        Ok(())
     }
 
     async fn delete_object(&self, _bucket: &str, key: &str) -> Result<()> {
@@ -361,5 +380,23 @@ mod tests {
             .lock()
             .unwrap()
             .contains_key("orderbook/2025-06-08/12/12_00_worker_0.jsonl"));
+    }
+
+    #[tokio::test]
+    async fn test_in_memory_put_object() {
+        let s3 = InMemoryS3Service::default();
+        s3.put_object("test-bucket", "orderbook/2025-06-08/12/file.jsonl", b"hello".to_vec())
+            .await
+            .unwrap();
+
+        let objects = s3.list_objects("test-bucket", "orderbook/").await.unwrap();
+        assert_eq!(objects.len(), 1);
+        assert_eq!(objects[0].key, "orderbook/2025-06-08/12/file.jsonl");
+
+        let body = s3
+            .get_object("test-bucket", "orderbook/2025-06-08/12/file.jsonl")
+            .await
+            .unwrap();
+        assert_eq!(body, b"hello");
     }
 }

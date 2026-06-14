@@ -13,13 +13,18 @@ variable "region" {
 }
 
 variable "collector_count" {
-  description = "Number of collector relay instances"
+  description = "Number of collector instances"
   default     = 4
 }
 
 variable "collector_instance_type" {
-  description = "EC2 instance type for relay collectors"
+  description = "EC2 instance type for collectors"
   default     = "t3.small"
+}
+
+variable "aggregator_instance_type" {
+  description = "EC2 instance type for central aggregator"
+  default     = "t3.medium"
 }
 
 variable "chunk_size" {
@@ -27,9 +32,19 @@ variable "chunk_size" {
   default     = 100
 }
 
-variable "aggregator_instance_type" {
-  description = "EC2 instance type for central aggregator"
-  default     = "t3.medium"
+variable "replication_factor" {
+  description = "How many collectors each market is assigned to (for HA)"
+  default     = 2
+}
+
+variable "heartbeat_timeout_secs" {
+  description = "Seconds before a collector is considered stale"
+  default     = 60
+}
+
+variable "delete_after_merge" {
+  description = "Delete S3 objects after aggregator merges them"
+  default     = false
 }
 
 variable "key_name" {
@@ -38,8 +53,13 @@ variable "key_name" {
 }
 
 variable "s3_bucket" {
-  description = "S3 bucket containing polymarket-collector binary"
+  description = "S3 bucket for binary, markets.jsonl, and collector output"
   type        = string
+}
+
+variable "s3_prefix" {
+  description = "S3 prefix for collector rotated files"
+  default     = "orderbook/"
 }
 
 provider "aws" {
@@ -55,7 +75,7 @@ data "aws_ami" "ubuntu" {
   }
 }
 
-# Security Group: allow SSH in, everything out, 8080 between instances
+# Security Group: allow SSH in, 8080 between instances, everything out
 resource "aws_security_group" "collector" {
   name_prefix = "polymarket-collector-"
   description = "Allow SSH inbound, inter-instance 8080, all outbound"
@@ -69,11 +89,11 @@ resource "aws_security_group" "collector" {
   }
 
   ingress {
-    from_port                = 8080
-    to_port                  = 8080
-    protocol                 = "tcp"
-    source_security_group_id = aws_security_group.collector.id
-    description              = "Aggregator from collectors"
+    from_port   = 8080
+    to_port     = 8080
+    protocol    = "tcp"
+    self        = true
+    description = "Aggregator orchestration API between collectors and aggregator"
   }
 
   egress {
@@ -89,7 +109,7 @@ resource "aws_security_group" "collector" {
   }
 }
 
-# IAM Role for S3 read-only access
+# IAM Role for S3 access (read binary/markets, write collector output, delete after merge)
 resource "aws_iam_role" "collector" {
   name = "polymarket-collector-role"
 
@@ -112,9 +132,17 @@ resource "aws_iam_role_policy" "collector_s3" {
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
-      Effect   = "Allow"
-      Action   = ["s3:GetObject"]
-      Resource = "arn:aws:s3:::${var.s3_bucket}/*"
+      Effect = "Allow"
+      Action = [
+        "s3:GetObject",
+        "s3:PutObject",
+        "s3:DeleteObject",
+        "s3:ListBucket"
+      ]
+      Resource = [
+        "arn:aws:s3:::${var.s3_bucket}",
+        "arn:aws:s3:::${var.s3_bucket}/*"
+      ]
     }]
   })
 }
@@ -139,10 +167,13 @@ resource "aws_instance" "aggregator" {
   }
 
   user_data = templatefile("${path.module}/user_data.sh", {
-    mode          = "aggregator"
-    shard_index   = 0
-    s3_bucket     = var.s3_bucket
-    aggregator_ip = "0.0.0.0"
+    mode                   = "aggregator"
+    s3_bucket              = var.s3_bucket
+    s3_prefix              = var.s3_prefix
+    region                 = var.region
+    replication_factor     = var.replication_factor
+    heartbeat_timeout_secs = var.heartbeat_timeout_secs
+    delete_after_merge     = var.delete_after_merge
   })
 
   tags = {
@@ -150,7 +181,7 @@ resource "aws_instance" "aggregator" {
   }
 }
 
-# Relay Collectors (12 shards)
+# Collectors
 resource "aws_instance" "collector" {
   count                  = var.collector_count
   ami                    = data.aws_ami.ubuntu.id
@@ -166,10 +197,12 @@ resource "aws_instance" "collector" {
   }
 
   user_data = templatefile("${path.module}/user_data.sh", {
-    mode          = "collector"
-    shard_index   = count.index
-    s3_bucket     = var.s3_bucket
-    chunk_size    = var.chunk_size
+    mode            = "collector"
+    s3_bucket       = var.s3_bucket
+    s3_prefix       = var.s3_prefix
+    region          = var.region
+    chunk_size      = var.chunk_size
+    aggregator_url  = "http://${aws_instance.aggregator.private_ip}:8080"
   })
 
   tags = {
@@ -177,10 +210,18 @@ resource "aws_instance" "collector" {
   }
 }
 
-output "aggregator_ip" {
+output "aggregator_private_ip" {
+  value = aws_instance.aggregator.private_ip
+}
+
+output "aggregator_public_ip" {
   value = aws_instance.aggregator.public_ip
 }
 
-output "collector_ips" {
+output "collector_private_ips" {
+  value = aws_instance.collector[*].private_ip
+}
+
+output "collector_public_ips" {
   value = aws_instance.collector[*].public_ip
 }

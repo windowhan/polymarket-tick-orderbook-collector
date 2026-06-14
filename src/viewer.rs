@@ -196,7 +196,7 @@ fn load_data(path: &Path) -> Result<ViewerData> {
     // Step 2: Determine chunk size for parallel processing.
     // Each CPU core gets roughly `lines / num_cpus` lines to process independently.
     let num_cpus = std::thread::available_parallelism()?.get();
-    let chunk_size = std::cmp::max(1, (lines.len() + num_cpus - 1) / num_cpus);
+    let chunk_size = std::cmp::max(1, lines.len().div_ceil(num_cpus));
 
     // Step 3: Parallel map over chunks using Rayon.
     // Each chunk produces a local HashMap<asset, LocalMarketData>.

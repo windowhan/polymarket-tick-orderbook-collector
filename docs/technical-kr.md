@@ -14,9 +14,9 @@
 |------|------|
 | **시장 발굴** | Gamma API에서 시장/토큰 목록 수집 |
 | **WebSocket 수집** | Polymarket CLOB WebSocket에 병렬 연결하여 book/price_change/last_trade 이벤트 수집 |
-| **HTTP Relay** | WebSocket 데이터를 HTTP POST로 중앙 Aggregator에 전달 |
+| **Orchestrated Distribution** | Aggregator가 Collector들에게 동적으로 마켓 할당 |
 | **파일 저장** | 시간 기반 회전(rotation)으로 로컬 JSONL 저장 |
-| **S3 집계** | 분산 수집된 S3 객체를 병합하여 단일 JSONL 생성 |
+| **S3-Notify Aggregation** | Collector가 S3 업로드 후 Aggregator에 알림, Aggregator가 병합 |
 | **On-chain 조회** | `transaction_hash`로 Polygon에서 실제 체결자(maker/taker) 조회 |
 | **Web Viewer** | axum 기반 웹 UI로 호가창/체결/타임라인 시각화 |
 
@@ -25,47 +25,53 @@
 ## 2. 시스템 아키텍처
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                         데이터 수집 단계                              │
-├─────────────────────────────────────────────────────────────────────┤
-│                                                                     │
-│   Gamma API          Polymarket WS           Polygon RPC            │
-│       │                    │                     │                  │
-│       ▼                    ▼                     ▼                  │
-│  ┌──────────┐      ┌──────────────┐      ┌─────────────┐           │
-│  │ discover │      │ ws_orderbook │      │  onchain.rs │           │
-│  │  (REST)  │      │  (WebSocket) │      │(eth_getLogs)│           │
-│  └────┬─────┘      └──────┬───────┘      └──────┬──────┘           │
-│       │                   │                     │                   │
-│       ▼                   ▼                     ▼                   │
-│  data/markets/       data/orderbook/      data/onchain.jsonl        │
-│  markets.jsonl       *.jsonl                                        │
-│                                                                     │
-└─────────────────────────────────────────────────────────────────────┘
-                                  │
-                                  ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                         데이터 집계 단계                              │
-├─────────────────────────────────────────────────────────────────────┤
-│                                                                     │
-│   aggregator (HTTP)  ──►  data/aggregated.jsonl                      │
-│        or                                                           │
-│   aggregate-s3  ──►  S3 shards 병합 ──►  *.jsonl                    │
-│                                                                     │
-└─────────────────────────────────────────────────────────────────────┘
-                                  │
-                                  ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                         시각화 단계                                   │
-├─────────────────────────────────────────────────────────────────────┤
-│                                                                     │
-│   viewer (axum)  ──►  http://127.0.0.1:3001                        │
-│   - /api/markets                                                    │
-│   - /api/book_snapshots/:asset                                      │
-│   - /api/trades/:asset                                              │
-│   - /api/trade_detail/:tx_hash  ──► Polygon RPC                    │
-│                                                                     │
-└─────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                              제어 흐름 (Orchestration)                        │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│   Gamma API ──► discover ──► markets.jsonl                                  │
+│                                    │                                        │
+│                                    ▼                                        │
+│                           Aggregator (orchestrator)                         │
+│                           - /register                                       │
+│                           - /assignment/:id  ──────┐                        │
+│                           - /heartbeat/:id         │                        │
+│                           - /notify ◄──────────────┘                        │
+│                                    │                                        │
+│                                    ▼                                        │
+│                           S3 download + merge                               │
+│                                    │                                        │
+│                                    ▼                                        │
+│                           data/aggregated_orderbook.jsonl                   │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                        │
+                                        │ /assignment
+                                        ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                              데이터 흐름 (Data Flow)                          │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│   Collector 1 ──► WebSocket ──► 로컬 회전 파일 ──► S3 업로드 ──┐           │
+│   Collector 2 ──► WebSocket ──► 로컬 회전 파일 ──► S3 업로드 ──┤           │
+│   Collector N ──► WebSocket ──► 로컬 회전 파일 ──► S3 업로드 ──┤           │
+│                                                                │           │
+│   업로드 완료 후 각 Collector가 Aggregator에게 /notify 호출  ──┘           │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                        │
+                                        ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                              시각화 단계                                       │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│   viewer (axum)  ──►  http://127.0.0.1:3001                                │
+│   - /api/markets                                                            │
+│   - /api/book_snapshots/:asset                                              │
+│   - /api/trades/:asset                                                      │
+│   - /api/trade_detail/:tx_hash  ──► Polygon RPC                            │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -84,11 +90,15 @@
 ```rust
 pub struct OrderbookCollector {
     token_ids: Vec<String>,
-    output_dir: Option<PathBuf>,
-    relay_url: Option<String>,
-    chunk_size: usize,          // 한 워커가 담당할 토큰 수
-    rotate_interval: Duration,  // 파일 회전 주기
-    duration_secs: Option<u64>, // graceful shutdown 타이머
+    output_dir: PathBuf,
+    relay_url: Option<String>,      // 레거시 relay 모드 (거의 사용 안 함)
+    aggregator_url: Option<String>, // Orchestrator 주소
+    chunk_size: usize,              // 한 워커가 담당할 토큰 수
+    rotate_interval: Duration,      // 파일 회전 주기
+    duration_secs: Option<u64>,     // graceful shutdown 타이머
+    s3_bucket: Option<String>,      // S3 업로드 버킷
+    s3_prefix: Option<String>,      // S3 업로드 prefix
+    aws_region: String,             // S3 리전
 }
 ```
 
@@ -99,12 +109,19 @@ pub struct OrderbookWorker {
     id: usize,
     tokens: Vec<String>,
     buffer: Vec<OrderbookEvent>,
-    buffer_size: usize,     // 기본 1000
-    flush_interval: Duration, // 기본 10초
+    buffer_size: usize,         // 기본 1000
+    flush_interval: Duration,   // 기본 10초
     writer: Option<RotatedWriter>,
     relay_url: Option<String>,
+    s3_service: Option<Arc<dyn S3Service>>,
+    s3_bucket: Option<String>,
+    s3_prefix: Option<String>,
+    collector_id: Option<String>,
+    orchestration_client: Option<OrchestrationClient>,
 }
 ```
+
+5. **회전 파일 업로드**: `RotatedWriter`가 새 time window로 전환되면 이전 파일 경로를 `take_rotated_path()`로 꺼내 백그라운드 `tokio::task`에서 S3로 업로드하고 Aggregator의 `/notify`를 호출합니다. 업로드와 알림이 모두 성공하면 로컬 파일을 삭제합니다.
 
 1. **토큰 분할**: `chunk_size`만큼 토큰을 나눠 각 Worker에 할당
 2. **연결**: 각 Worker는 `wss://ws-subscriptions-clob.polymarket.com/ws/market`
@@ -354,26 +371,93 @@ data/orderbook/YYYY-MM-DD/HH/<filename>.jsonl
 
 ---
 
-### 3.5 `src/aggregator.rs` — HTTP Relay 수신 서버
+### 3.5 `src/aggregator.rs` — Orchestrated Aggregator + S3 Merger
 
 #### 책임
-- `POST /ingest`로 WebSocket Worker로부터 데이터 수신
-- 버퍼링 후 JSONL 파일에 플러시
+- Collector 등록 및 마켓 할당 (orchestrator)
+- Heartbeat 기반 Collector 생존 감시 및 자동 재할당
+- Collector로부터 S3 업로드 notify 수신
+- S3 파일 다운로드 및 단일 JSONL로 병합
 
-#### 플러시 전략
+#### API 엔드포인트
+
+| 엔드포인트 | 메서드 | 설명 |
+|-----------|--------|------|
+| `/register` | POST | Collector 등록, `collector_id` 반환 |
+| `/assignment/:collector_id` | GET | 해당 Collector에 할당된 token IDs 조회 |
+| `/heartbeat/:collector_id` | POST | 생존 보고 |
+| `/notify` | POST | S3 업로드 완료 알림 (`bucket`, `key`) |
+
+#### 상태 구조
 
 ```rust
-// 5초마다 백그라운드 태스크로 버퍼 플러시
-tokio::spawn(async move {
-    loop {
-        tokio::time::sleep(Duration::from_secs(5)).await;
-        flush_buffer(&state).await;
-    }
-});
+struct AppState {
+    token_ids: Vec<String>,                 // 전체 토큰 리스트
+    collectors: HashMap<String, CollectorInfo>,
+    assignments: HashMap<String, Vec<String>>, // collector_id -> token_ids
+    market_replicas: HashMap<String, Vec<String>>, // token_id -> collector_ids
+    pending_files: Vec<S3Object>,           // notify로 들어온 파일
+    processed_keys: HashSet<String>,        // 이미 병합한 S3 key
+    replication_factor: usize,              // 기본 2
+    heartbeat_timeout: Duration,            // 기본 60초
+}
 ```
 
-**주의**: Aggregator는 newline-delimited JSON 형식으로 저장해야 합니다. 각 HTTP body가 여러 개의 JSON 객체를 포함할 수 있으므로, `
-`로 분리하여 한 줄씩 저장해야 합니다.
+#### 할당 알고리즘
+
+1. 전체 token 리스트를 `tokens_per_collector`(기본 100) 단위로 chunk 분할
+2. 각 chunk를 `replication_factor`(기본 2)만큼의 Collector에 할당
+3. Round-robin으로 replica를 서로 다른 Collector에 배치
+
+```rust
+// 예시: 4대 Collector, chunk_size=100, replication=2
+// Chunk 0 (token 0..99)   → Collector 0, Collector 1
+// Chunk 1 (token 100..199) → Collector 2, Collector 3
+```
+
+#### Stale Collector 처리
+
+1. 10초마다 모든 Collector의 `last_heartbeat` 확인
+2. `heartbeat_timeout`(기본 60초) 초과 시 STALE로 표시
+3. STALE Collector의 assignments 해제
+4. replica가 부족한 chunk를 healthy Collector에 재할당
+5. 재할당된 Collector는 다음 `/assignment` 폴린 또는 재시작 시 새 마켓 수집
+
+#### S3 병합 흐름
+
+```
+Collector ──WebSocket──► 로컬 회전 파일
+                              │
+                              ▼ (rotation 발생)
+                    Rust-native S3 업로드
+                              │
+                              ▼
+                         S3 bucket
+                              │
+                              ▼
+                    POST /notify (key, collector_id)
+                              │
+                              ▼
+                         Aggregator
+                              │
+                              ├─ pending_files에 추가
+                              │
+                              ▼
+                    백그라운드 merge_task (30초 주기)
+                              │
+                              ├─ pending_files 처리
+                              ├─ S3 폴린 백업 (notify 유실 대비)
+                              └─ output_path에 append
+```
+
+**S3 key 형식**: `{s3_prefix}{collector_id}/{relative_local_path}`
+- 여러 Collector가 동일 prefix에 업로드핏 key 충돌을 피하기 위해 `collector_id`를 포함합니다.
+- 예: `orderbook/uuid-123/2024-06-08/15/15_00_worker_0.jsonl`
+
+병합 시 중복 제거:
+- `book`: `(timestamp / 1000, asset)`
+- `last_trade`: `(transaction_hash)` 또는 `(timestamp, asset, price, size)`
+- `price_change`: `(timestamp, asset)`
 
 ---
 
@@ -391,6 +475,52 @@ https://gamma-api.polymarket.com/markets?offset=<offset>&limit=100
 ```
 
 **주의**: `/markets/keyset` 엔드포인트는 cursor 동결 버그가 있어, offset 기반 페이징을 사용하고 최대 10,000개까지만 수집합니다.
+
+---
+
+### 3.7 `src/orchestration.rs` — Aggregator Orchestration Client
+
+#### 책임
+- Collector가 Aggregator에 등록
+- 할당된 token IDs 조회
+- 주기적 heartbeat 전송
+- S3 업로드 완료 후 `/notify` 호출
+
+#### 주요 메서드
+
+```rust
+impl OrchestrationClient {
+    /// Aggregator에 등록하고 collector_id를 받음
+    pub async fn register(base_url: String, preferred_id: Option<String>) -> Result<Self>
+
+    /// 현재 할당된 token IDs와 chunk_size 조회
+    pub async fn fetch_assignment(&self) -> Result<(Vec<String>, usize)>
+
+    /// 생존 보고 (10초 주기 권장)
+    pub async fn send_heartbeat(&self) -> Result<()>
+
+    /// S3 업로드 완료 알림
+    pub async fn notify_s3(&self, bucket: &str, key: &str) -> Result<()>
+
+    /// 백그라운드 heartbeat 태스크 생성
+    pub fn spawn_heartbeat_task(&self, interval: Duration) -> JoinHandle<()>
+}
+```
+
+#### 사용 예시
+
+```rust
+let client = OrchestrationClient::register(
+    "http://aggregator:8080".to_string(),
+    None,
+).await?;
+
+let (tokens, chunk_size) = client.fetch_assignment().await?;
+let _handle = client.spawn_heartbeat_task(Duration::from_secs(10));
+
+// After S3 upload
+client.notify_s3("my-bucket", "orderbook/2024-06-08/12/file.jsonl").await?;
+```
 
 ---
 
@@ -529,17 +659,20 @@ cargo build --release
 ### 6.3 WebSocket 수집
 
 ```bash
-# 로컬 파일 모드
+# 정적 모드 (Aggregator 없이 로컬에 저장)
 ./target/release/polymarket-collector collect-orderbook \
-  --input data/markets/markets.jsonl \
+  --markets-path data/markets/markets.jsonl \
   --output-dir data/orderbook \
   --chunk-size 100 \
   --duration-secs 3600
 
-# HTTP Relay 모드
+# Orchestrated 모드 (Aggregator에게 등록하고 할당받은 마켓 수집, S3 업로드)
 ./target/release/polymarket-collector collect-orderbook \
-  --input data/markets/markets.jsonl \
-  --relay-url http://127.0.0.1:3000/ingest \
+  --aggregator-url http://127.0.0.1:8080 \
+  --output-dir data/orderbook \
+  --s3-bucket my-polymarket-bucket \
+  --s3-prefix orderbook/ \
+  --aws-region us-east-1 \
   --chunk-size 100
 ```
 
@@ -547,8 +680,14 @@ cargo build --release
 
 ```bash
 ./target/release/polymarket-collector aggregator \
-  --bind 127.0.0.1:3000 \
-  --output data/aggregated.jsonl
+  --bind 127.0.0.1:8080 \
+  --output-path data/aggregated_orderbook.jsonl \
+  --markets-path data/markets/markets.jsonl \
+  --s3-bucket my-polymarket-bucket \
+  --s3-prefix orderbook/ \
+  --replication-factor 2 \
+  --heartbeat-timeout-secs 60 \
+  --delete-after-merge
 ```
 
 ### 6.5 Viewer 실행
@@ -598,6 +737,25 @@ cargo build --release
 ### 7.6 Viewer 메모리 사용
 
 모든 데이터를 시작 시 메모리에 로드합니다. 800k 라인 기준 약 829MB RAM 사용. 대용량 데이터 시 충분한 메모리 확보 필요.
+
+### 7.7 제거된 레거시 명령
+
+새 오케스트레이션 아키텍처로 전환하면서 다음 명령/옵션이 제거되었습니다:
+
+| 제거 항목 | 대안 |
+|-----------|------|
+| `collect-orderbook --relay-url` | S3 업로드 + `/notify` |
+| `aggregate-s3` 서브커맨드 | Aggregator 내부 S3 병합 |
+| `collect-orderbook` cron 업로드 | Rust-native S3 업로드 + `/notify` |
+| `split-markets` 서브커맨드 | Aggregator 동적 할당 |
+| `aggregator` 단순 HTTP `/ingest` | `/register`, `/assignment`, `/notify` API |
+
+### 7.8 고가용성 설정
+
+- `replication_factor=2` 권장: 단일 Collector 장애 시에도 데이터 끊김 없음
+- Collector 최소 대수: `ceil(total_tokens / chunk_size / desired_connections_per_machine) * replication_factor`
+- `heartbeat_timeout_secs`는 네트워크 지연을 고려하여 30~60초 권장
+- `delete-after-merge=true`로 S3 비용 절감 가능 (디버깅 시 false 권장)
 
 ---
 

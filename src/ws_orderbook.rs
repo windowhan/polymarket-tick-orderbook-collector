@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use chrono::Utc;
 use futures::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
@@ -10,6 +10,10 @@ use std::time::Duration;
 use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
 use tracing::{info, warn};
 
+use std::path::Path;
+
+use crate::aggregate_s3::{AwsS3Service, S3Service};
+use crate::orchestration::OrchestrationClient;
 use crate::storage::RotatedWriter;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -34,6 +38,15 @@ pub struct OrderbookCollector {
     rotate_interval: Duration,
     duration_secs: Option<u64>,
     shutdown: Arc<AtomicBool>,
+    /// Optional aggregator URL for orchestrated mode.
+    /// When set, the collector registers with the aggregator, fetches its
+    /// token assignment, and sends periodic heartbeats.
+    aggregator_url: Option<String>,
+    /// Optional S3 configuration. When set, closed rotation files are uploaded
+    /// to S3 and the aggregator is notified.
+    s3_bucket: Option<String>,
+    s3_prefix: Option<String>,
+    aws_region: String,
 }
 
 impl OrderbookCollector {
@@ -53,23 +66,106 @@ impl OrderbookCollector {
             rotate_interval,
             duration_secs,
             shutdown: Arc::new(AtomicBool::new(false)),
+            aggregator_url: None,
+            s3_bucket: None,
+            s3_prefix: None,
+            aws_region: "us-east-1".to_string(),
         }
     }
 
+    /// Set the aggregator URL to enable orchestrated mode.
+    ///
+    /// In orchestrated mode, the collector ignores any initially supplied
+    /// `token_ids` and instead fetches its assignment from the aggregator.
+    pub fn with_aggregator_url(mut self, url: String) -> Self {
+        self.aggregator_url = Some(url);
+        self
+    }
+
+    /// Enable S3 upload of closed rotation files.
+    ///
+    /// When set, each worker uploads completed files to
+    /// `s3://{bucket}/{prefix}{collector_id}/{relative_local_path}` and notifies
+    /// the aggregator via `/notify`.
+    pub fn with_s3_upload(mut self, bucket: String, prefix: String, region: String) -> Self {
+        self.s3_bucket = Some(bucket);
+        self.s3_prefix = Some(prefix);
+        self.aws_region = region;
+        self
+    }
+
     pub async fn run(self) -> Result<()> {
-        let token_chunks: Vec<Vec<String>> = self
-            .token_ids
+        // ── Orchestrated mode: register with aggregator and fetch assignment ──
+        let mut _heartbeat_handle: Option<tokio::task::JoinHandle<()>> = None;
+        let (
+            token_ids,
+            orchestration_client,
+            collector_id,
+            s3_service,
+            s3_bucket,
+            s3_prefix,
+        ) = if let Some(aggregator_url) = &self.aggregator_url {
+            info!(url = %aggregator_url, "Entering orchestrated collector mode");
+            let client = OrchestrationClient::register(aggregator_url.clone(), None)
+                .await
+                .context("Failed to register with aggregator")?;
+            let cid = client.collector_id().to_string();
+
+            let (assigned_tokens, assigned_chunk_size) = client
+                .fetch_assignment()
+                .await
+                .context("Failed to fetch assignment from aggregator")?;
+
+            info!(
+                collector_id = %cid,
+                assigned_tokens = assigned_tokens.len(),
+                chunk_size = assigned_chunk_size,
+                "Received assignment from aggregator"
+            );
+
+            // Start heartbeat task: every 10 seconds.
+            _heartbeat_handle = Some(client.spawn_heartbeat_task(Duration::from_secs(10)));
+
+            // Build S3 service if the user supplied a bucket.
+            let s3_service: Option<Arc<dyn S3Service>> = if self.s3_bucket.is_some() {
+                Some(Arc::new(AwsS3Service::new(&self.aws_region).await))
+            } else {
+                None
+            };
+
+            (
+                assigned_tokens,
+                Some(client),
+                Some(cid),
+                s3_service,
+                self.s3_bucket.clone(),
+                self.s3_prefix.clone(),
+            )
+        } else {
+            (
+                self.token_ids.clone(),
+                None,
+                None,
+                None,
+                self.s3_bucket.clone(),
+                self.s3_prefix.clone(),
+            )
+        };
+
+        let token_chunks: Vec<Vec<String>> = token_ids
             .chunks(self.chunk_size)
             .map(|c| c.to_vec())
             .collect();
 
         info!(
-            total_tokens = self.token_ids.len(),
+            total_tokens = token_ids.len(),
             chunks = token_chunks.len(),
             chunk_size = self.chunk_size,
             rotate_secs = self.rotate_interval.as_secs(),
             duration_secs = ?self.duration_secs,
             relay_url = ?self.relay_url,
+            orchestrated = self.aggregator_url.is_some(),
+            s3_upload = s3_bucket.is_some(),
             "Starting parallel WebSocket collectors"
         );
 
@@ -79,8 +175,25 @@ impl OrderbookCollector {
             let relay_url = self.relay_url.clone();
             let rotate_interval = self.rotate_interval;
             let shutdown = self.shutdown.clone();
+            let s3_service = s3_service.clone();
+            let s3_bucket = s3_bucket.clone();
+            let s3_prefix = s3_prefix.clone();
+            let orchestration_client = orchestration_client.clone();
+            let collector_id = collector_id.clone();
             let handle = tokio::spawn(async move {
-                let mut worker = OrderbookWorker::new(id, chunk, output_dir, relay_url, rotate_interval, shutdown);
+                let mut worker = OrderbookWorker::new(
+                    id,
+                    chunk,
+                    output_dir,
+                    relay_url,
+                    rotate_interval,
+                    shutdown,
+                    s3_service,
+                    s3_bucket,
+                    s3_prefix,
+                    collector_id,
+                    orchestration_client,
+                );
                 if let Err(e) = worker.run().await {
                     warn!(worker_id = id, error = %e, "Worker failed");
                 }
@@ -128,9 +241,15 @@ struct OrderbookWorker {
     writer: Option<RotatedWriter>,
     rotate_interval: Duration,
     shutdown: Arc<AtomicBool>,
+    s3_service: Option<Arc<dyn S3Service>>,
+    s3_bucket: Option<String>,
+    s3_prefix: Option<String>,
+    collector_id: Option<String>,
+    orchestration_client: Option<OrchestrationClient>,
 }
 
 impl OrderbookWorker {
+    #[allow(clippy::too_many_arguments)]
     fn new(
         id: usize,
         token_ids: Vec<String>,
@@ -138,7 +257,17 @@ impl OrderbookWorker {
         relay_url: Option<String>,
         rotate_interval: Duration,
         shutdown: Arc<AtomicBool>,
+        s3_service: Option<Arc<dyn S3Service>>,
+        s3_bucket: Option<String>,
+        s3_prefix: Option<String>,
+        collector_id: Option<String>,
+        orchestration_client: Option<OrchestrationClient>,
     ) -> Self {
+        // Ensure the output directory exists and use an absolute path so that
+        // rotated file paths can be reliably stripped to compute S3 keys.
+        std::fs::create_dir_all(&output_dir).ok();
+        let output_dir = std::fs::canonicalize(&output_dir).unwrap_or(output_dir);
+
         Self {
             id,
             token_ids,
@@ -151,6 +280,11 @@ impl OrderbookWorker {
             writer: None,
             rotate_interval,
             shutdown,
+            s3_service,
+            s3_bucket,
+            s3_prefix,
+            collector_id,
+            orchestration_client,
         }
     }
 
@@ -205,8 +339,45 @@ impl OrderbookWorker {
                 path = ?writer.current_path(),
                 "Flushed buffer"
             );
+
+            // If a rotation happened, upload the closed file in the background.
+            if let Some(rotated) = writer.take_rotated_path() {
+                self.spawn_upload_task(rotated);
+            }
         }
         Ok(())
+    }
+
+    /// Spawn a background task to upload a rotated file to S3 and notify the aggregator.
+    fn spawn_upload_task(&self, local_path: PathBuf) {
+        if let (Some(s3), Some(bucket), Some(prefix), Some(collector_id)) = (
+            self.s3_service.clone(),
+            self.s3_bucket.clone(),
+            self.s3_prefix.clone(),
+            self.collector_id.clone(),
+        ) {
+            let output_dir = self.output_dir.clone();
+            let client = self.orchestration_client.clone();
+            tokio::spawn(async move {
+                if let Err(e) = upload_rotated_file(
+                    &*s3,
+                    &bucket,
+                    &prefix,
+                    &collector_id,
+                    &output_dir,
+                    &local_path,
+                    client.as_ref(),
+                )
+                .await
+                {
+                    warn!(
+                        error = %e,
+                        path = %local_path.display(),
+                        "Failed to upload/notify rotated file; local copy preserved"
+                    );
+                }
+            });
+        }
     }
 
     async fn run(&mut self) -> Result<()> {
@@ -481,4 +652,55 @@ impl OrderbookWorker {
 
         Ok(())
     }
+}
+
+/// Upload a closed rotation file to S3 and optionally notify the aggregator.
+///
+/// The S3 key is built as `{prefix}{collector_id}/{relative_local_path}` so that
+/// multiple collectors can write to the same prefix without key collisions.
+/// The local file is deleted only after both upload and notification succeed.
+async fn upload_rotated_file(
+    s3: &dyn S3Service,
+    bucket: &str,
+    prefix: &str,
+    collector_id: &str,
+    output_dir: &Path,
+    local_path: &Path,
+    client: Option<&OrchestrationClient>,
+) -> Result<()> {
+    let body = tokio::fs::read(local_path)
+        .await
+        .with_context(|| format!("Failed to read rotated file {}", local_path.display()))?;
+
+    let rel = local_path
+        .strip_prefix(output_dir)
+        .with_context(|| {
+            format!(
+                "Rotated file {} is not under output dir {}",
+                local_path.display(),
+                output_dir.display()
+            )
+        })?
+        .to_string_lossy()
+        .replace('\\', "/");
+
+    let key = format!("{}/{}/{}", prefix.trim_end_matches('/'), collector_id, rel);
+
+    s3.put_object(bucket, &key, body)
+        .await
+        .with_context(|| format!("Failed to upload {} to s3://{}/{}", local_path.display(), bucket, key))?;
+
+    if let Some(client) = client {
+        client
+            .notify_s3(bucket, &key)
+            .await
+            .with_context(|| format!("Failed to notify aggregator about s3://{}/{}", bucket, key))?;
+    }
+
+    tokio::fs::remove_file(local_path)
+        .await
+        .with_context(|| format!("Failed to delete local file {}", local_path.display()))?;
+
+    info!(key = %key, "Uploaded and notified");
+    Ok(())
 }

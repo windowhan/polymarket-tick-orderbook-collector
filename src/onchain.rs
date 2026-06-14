@@ -177,14 +177,14 @@ fn parse_log(log: &serde_json::Value) -> Result<OnchainTrade> {
     let maker = topics
         .get(2)
         .and_then(|v| v.as_str())
-        .map(|s| normalize_address(s))
+        .map(normalize_address)
         .unwrap_or_default();
 
     // topics[3] = taker address (indexed, same 32-byte padding as maker)
     let taker = topics
         .get(3)
         .and_then(|v| v.as_str())
-        .map(|s| normalize_address(s))
+        .map(normalize_address)
         .unwrap_or_default();
 
     // data[62..64] = side byte (uint8 stored in the last byte of the first 32-byte word).
@@ -438,7 +438,7 @@ pub fn find_order_filled(logs: &[serde_json::Value]) -> Option<OnchainTrade> {
             .and_then(|v| v.as_array())
             .cloned()
             .unwrap_or_default();
-        let topic0 = topics.get(0).and_then(|v| v.as_str()).unwrap_or("");
+        let topic0 = topics.first().and_then(|v| v.as_str()).unwrap_or("");
 
         // Match only logs from our known exchange contracts with the OrderFilled topic.
         if valid_addresses.contains(addr.to_lowercase().as_str())
