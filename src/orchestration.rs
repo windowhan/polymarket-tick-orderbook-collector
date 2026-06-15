@@ -1,5 +1,7 @@
+use crate::http_client::{HttpClient, ReqwestHttpClient};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 use std::time::Duration;
 use tracing::{info, warn};
 
@@ -10,11 +12,20 @@ use tracing::{info, warn};
 /// - Fetching assigned token IDs
 /// - Sending periodic heartbeats
 /// - Polling for assignment changes
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct OrchestrationClient {
     base_url: String,
     collector_id: String,
-    http_client: reqwest::Client,
+    http_client: Arc<dyn HttpClient>,
+}
+
+impl std::fmt::Debug for OrchestrationClient {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("OrchestrationClient")
+            .field("base_url", &self.base_url)
+            .field("collector_id", &self.collector_id)
+            .finish_non_exhaustive()
+    }
 }
 
 /// Request body for registration.
@@ -46,45 +57,35 @@ pub struct NotifyRequest {
 
 impl OrchestrationClient {
     /// Create a new orchestration client and register with the aggregator.
-    ///
-    /// # Arguments
-    /// * `base_url` — Aggregator base URL, e.g. `"http://aggregator:8080"`
-    /// * `preferred_id` — Optional preferred collector ID. If None, aggregator assigns UUID.
-    ///
-    /// # Returns
-    /// `Ok(OrchestrationClient)` with the assigned collector ID.
-    ///
-    /// # Example — Input / Output
-    /// ```rust,ignore
-    /// let client = OrchestrationClient::register(
-    ///     "http://127.0.0.1:8080".to_string(),
-    ///     None,
-    /// ).await.unwrap();
-    ///
-    /// assert!(!client.collector_id().is_empty());
-    /// ```
     pub async fn register(base_url: String, preferred_id: Option<String>) -> Result<Self> {
-        let http_client = reqwest::Client::builder()
-            .timeout(Duration::from_secs(10))
-            .build()?;
+        let http_client = Arc::new(ReqwestHttpClient::new());
+        Self::register_with_client(http_client, base_url, preferred_id).await
+    }
 
+    /// Register with a caller-supplied HTTP client.
+    ///
+    /// This constructor enables dependency injection and is the primary way
+    /// tests wire in a mock [`HttpClient`].
+    pub async fn register_with_client(
+        http_client: Arc<dyn HttpClient>,
+        base_url: String,
+        preferred_id: Option<String>,
+    ) -> Result<Self> {
         let register_url = format!("{}/register", base_url);
-        let resp = http_client
-            .post(&register_url)
-            .json(&RegisterRequest {
-                collector_id: preferred_id,
-            })
-            .send()
+        let body = serde_json::to_string(&RegisterRequest {
+            collector_id: preferred_id,
+        })?;
+        let response = http_client
+            .post(&register_url, body)
             .await
             .with_context(|| format!("Failed to register at {}", register_url))?;
 
-        if !resp.status().is_success() {
-            anyhow::bail!("Registration failed: {}", resp.status());
+        if !response.is_success() {
+            anyhow::bail!("Registration failed: {}", response.status);
         }
 
-        let body: RegisterResponse = resp
+        let body: RegisterResponse = response
             .json()
-            .await
             .context("Failed to parse register response")?;
 
         info!(collector_id = %body.collector_id, "Registered with aggregator");
@@ -96,100 +97,85 @@ impl OrchestrationClient {
         })
     }
 
+    /// Build a client from an existing collector ID and HTTP client.
+    ///
+    /// Useful in tests that need a fully-constructed client without first
+    /// exercising the registration endpoint.
+    pub fn with_client(
+        base_url: String,
+        collector_id: String,
+        http_client: Arc<dyn HttpClient>,
+    ) -> Self {
+        Self {
+            base_url,
+            collector_id,
+            http_client,
+        }
+    }
+
     /// Return the assigned collector ID.
     pub fn collector_id(&self) -> &str {
         &self.collector_id
     }
 
     /// Fetch the current token assignment from the aggregator.
-    ///
-    /// # Returns
-    /// `(token_ids, chunk_size)` tuple.
-    ///
-    /// # Example — Input / Output
-    /// ```rust,ignore
-    /// let (tokens, chunk_size) = client.fetch_assignment().await.unwrap();
-    ///
-    /// // Output:
-    /// // tokens = vec!["400737...", "647039...", ...]
-    /// // chunk_size = 100
-    /// ```
     pub async fn fetch_assignment(&self) -> Result<(Vec<String>, usize)> {
         let url = format!("{}/assignment/{}", self.base_url, self.collector_id);
-        let resp = self
+        let response = self
             .http_client
             .get(&url)
-            .send()
             .await
             .with_context(|| format!("Failed to fetch assignment from {}", url))?;
 
-        if !resp.status().is_success() {
-            anyhow::bail!("Assignment fetch failed: {}", resp.status());
+        if !response.is_success() {
+            anyhow::bail!("Assignment fetch failed: {}", response.status);
         }
 
-        let body: AssignmentResponse = resp
+        let body: AssignmentResponse = response
             .json()
-            .await
             .context("Failed to parse assignment response")?;
 
         Ok((body.token_ids, body.chunk_size))
     }
 
     /// Send a heartbeat to the aggregator.
-    ///
-    /// Should be called periodically (e.g., every 10 seconds) to keep the
-    /// collector marked as healthy.
     pub async fn send_heartbeat(&self) -> Result<()> {
         let url = format!("{}/heartbeat/{}", self.base_url, self.collector_id);
-        let resp = self
+        let response = self
             .http_client
-            .post(&url)
-            .send()
+            .post(&url, String::new())
             .await
             .with_context(|| format!("Failed to send heartbeat to {}", url))?;
 
-        if !resp.status().is_success() {
-            anyhow::bail!("Heartbeat failed: {}", resp.status());
+        if !response.is_success() {
+            anyhow::bail!("Heartbeat failed: {}", response.status);
         }
 
         Ok(())
     }
 
     /// Notify the aggregator that a new S3 object is available for merging.
-    ///
-    /// # Arguments
-    /// * `bucket` — S3 bucket name
-    /// * `key` — S3 object key
-    ///
-    /// # Example — Input / Output
-    /// ```rust,ignore
-    /// client.notify_s3("my-bucket", "orderbook/2024-06-08/12/file.jsonl").await.unwrap();
-    /// // Output: aggregator adds the key to pending_files queue
-    /// ```
     pub async fn notify_s3(&self, bucket: &str, key: &str) -> Result<()> {
         let url = format!("{}/notify", self.base_url);
-        let resp = self
+        let body = serde_json::to_string(&NotifyRequest {
+            bucket: bucket.to_string(),
+            key: key.to_string(),
+            collector_id: self.collector_id.clone(),
+        })?;
+        let response = self
             .http_client
-            .post(&url)
-            .json(&NotifyRequest {
-                bucket: bucket.to_string(),
-                key: key.to_string(),
-                collector_id: self.collector_id.clone(),
-            })
-            .send()
+            .post(&url, body)
             .await
             .with_context(|| format!("Failed to notify aggregator at {}", url))?;
 
-        if !resp.status().is_success() {
-            anyhow::bail!("Notify failed: {}", resp.status());
+        if !response.is_success() {
+            anyhow::bail!("Notify failed: {}", response.status);
         }
 
         Ok(())
     }
 
     /// Spawn a background heartbeat task.
-    ///
-    /// Sends heartbeat every `interval` seconds until the returned handle is aborted.
     pub fn spawn_heartbeat_task(&self, interval: Duration) -> tokio::task::JoinHandle<()> {
         let client = self.clone();
         tokio::spawn(async move {
@@ -201,5 +187,360 @@ impl OrchestrationClient {
                 }
             }
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::http_client::{HttpResponse, InMemoryHttpClient};
+
+    fn ok_json(body: serde_json::Value) -> HttpResponse {
+        HttpResponse {
+            status: 200,
+            body: serde_json::to_string(&body).unwrap(),
+        }
+    }
+
+    fn error_response(status: u16, body: &str) -> HttpResponse {
+        HttpResponse {
+            status,
+            body: body.into(),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_register_success() {
+        let client = InMemoryHttpClient::new();
+        let base = "http://aggregator";
+        client.set_response(
+            &format!("{}/register", base),
+            Ok(ok_json(serde_json::json!({ "collector_id": "cid-123" }))),
+        );
+
+        let orch = OrchestrationClient::register_with_client(
+            Arc::new(client),
+            base.to_string(),
+            Some("preferred".to_string()),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(orch.collector_id(), "cid-123");
+    }
+
+    #[tokio::test]
+    async fn test_register_http_error() {
+        let client = InMemoryHttpClient::new();
+        let base = "http://aggregator";
+        client.set_response(
+            &format!("{}/register", base),
+            Err("connection refused".to_string()),
+        );
+
+        let err = OrchestrationClient::register_with_client(
+            Arc::new(client),
+            base.to_string(),
+            None,
+        )
+        .await
+        .unwrap_err();
+
+        assert!(err.to_string().contains("Failed to register"));
+    }
+
+    #[tokio::test]
+    async fn test_register_non_success_status() {
+        let client = InMemoryHttpClient::new();
+        let base = "http://aggregator";
+        client.set_response(&format!("{}/register", base), Ok(error_response(409, "conflict")));
+
+        let err = OrchestrationClient::register_with_client(
+            Arc::new(client),
+            base.to_string(),
+            None,
+        )
+        .await
+        .unwrap_err();
+
+        assert!(err.to_string().contains("Registration failed"));
+    }
+
+    #[tokio::test]
+    async fn test_register_parse_error() {
+        let client = InMemoryHttpClient::new();
+        let base = "http://aggregator";
+        client.set_response(
+            &format!("{}/register", base),
+            Ok(HttpResponse {
+                status: 200,
+                body: "not-json".into(),
+            }),
+        );
+
+        let err = OrchestrationClient::register_with_client(
+            Arc::new(client),
+            base.to_string(),
+            None,
+        )
+        .await
+        .unwrap_err();
+
+        assert!(err.to_string().contains("Failed to parse register response"));
+    }
+
+    #[tokio::test]
+    async fn test_fetch_assignment_success() {
+        let client = InMemoryHttpClient::new();
+        let base = "http://aggregator";
+        client.set_response(
+            &format!("{}/assignment/cid", base),
+            Ok(ok_json(serde_json::json!({
+                "token_ids": ["a", "b"],
+                "chunk_size": 50,
+            }))),
+        );
+
+        let orch = OrchestrationClient::with_client(
+            base.to_string(),
+            "cid".to_string(),
+            Arc::new(client),
+        );
+
+        let (tokens, chunk_size) = orch.fetch_assignment().await.unwrap();
+        assert_eq!(tokens, vec!["a", "b"]);
+        assert_eq!(chunk_size, 50);
+    }
+
+    #[tokio::test]
+    async fn test_fetch_assignment_non_success_status() {
+        let client = InMemoryHttpClient::new();
+        let base = "http://aggregator";
+        client.set_response(
+            &format!("{}/assignment/cid", base),
+            Ok(error_response(500, "down")),
+        );
+
+        let orch = OrchestrationClient::with_client(
+            base.to_string(),
+            "cid".to_string(),
+            Arc::new(client),
+        );
+
+        let err = orch.fetch_assignment().await.unwrap_err();
+        assert!(err.to_string().contains("Assignment fetch failed"));
+    }
+
+    #[tokio::test]
+    async fn test_fetch_assignment_http_error() {
+        let client = InMemoryHttpClient::new();
+        let base = "http://aggregator";
+        client.set_response(
+            &format!("{}/assignment/cid", base),
+            Err("network unreachable".to_string()),
+        );
+
+        let orch = OrchestrationClient::with_client(
+            base.to_string(),
+            "cid".to_string(),
+            Arc::new(client),
+        );
+
+        let err = orch.fetch_assignment().await.unwrap_err();
+        assert!(err.to_string().contains("Failed to fetch assignment"));
+    }
+
+    #[tokio::test]
+    async fn test_send_heartbeat_success() {
+        let client = InMemoryHttpClient::new();
+        let base = "http://aggregator";
+        client.set_response(&format!("{}/heartbeat/cid", base), Ok(ok_json(serde_json::json!({}))));
+
+        let orch = OrchestrationClient::with_client(
+            base.to_string(),
+            "cid".to_string(),
+            Arc::new(client),
+        );
+
+        orch.send_heartbeat().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_send_heartbeat_non_success_status() {
+        let client = InMemoryHttpClient::new();
+        let base = "http://aggregator";
+        client.set_response(
+            &format!("{}/heartbeat/cid", base),
+            Ok(error_response(503, "unavailable")),
+        );
+
+        let orch = OrchestrationClient::with_client(
+            base.to_string(),
+            "cid".to_string(),
+            Arc::new(client),
+        );
+
+        let err = orch.send_heartbeat().await.unwrap_err();
+        assert!(err.to_string().contains("Heartbeat failed"));
+    }
+
+    #[tokio::test]
+    async fn test_send_heartbeat_http_error() {
+        let client = InMemoryHttpClient::new();
+        let base = "http://aggregator";
+        client.set_response(
+            &format!("{}/heartbeat/cid", base),
+            Err("connection reset".to_string()),
+        );
+
+        let orch = OrchestrationClient::with_client(
+            base.to_string(),
+            "cid".to_string(),
+            Arc::new(client),
+        );
+
+        let err = orch.send_heartbeat().await.unwrap_err();
+        assert!(err.to_string().contains("Failed to send heartbeat"));
+    }
+
+    #[tokio::test]
+    async fn test_notify_s3_success() {
+        let client = InMemoryHttpClient::new();
+        let base = "http://aggregator";
+        client.set_response(&format!("{}/notify", base), Ok(ok_json(serde_json::json!({}))));
+
+        let orch = OrchestrationClient::with_client(
+            base.to_string(),
+            "cid".to_string(),
+            Arc::new(client),
+        );
+
+        orch.notify_s3("bucket", "orderbook/key.jsonl").await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_notify_s3_non_success_status() {
+        let client = InMemoryHttpClient::new();
+        let base = "http://aggregator";
+        client.set_response(
+            &format!("{}/notify", base),
+            Ok(error_response(500, "down")),
+        );
+
+        let orch = OrchestrationClient::with_client(
+            base.to_string(),
+            "cid".to_string(),
+            Arc::new(client),
+        );
+
+        let err = orch.notify_s3("bucket", "key").await.unwrap_err();
+        assert!(err.to_string().contains("Notify failed"));
+    }
+
+    #[tokio::test]
+    async fn test_notify_s3_http_error() {
+        let client = InMemoryHttpClient::new();
+        let base = "http://aggregator";
+        client.set_response(
+            &format!("{}/notify", base),
+            Err("timeout".to_string()),
+        );
+
+        let orch = OrchestrationClient::with_client(
+            base.to_string(),
+            "cid".to_string(),
+            Arc::new(client),
+        );
+
+        let err = orch.notify_s3("bucket", "key").await.unwrap_err();
+        assert!(err.to_string().contains("Failed to notify aggregator"));
+    }
+
+    #[tokio::test]
+    async fn test_collector_id() {
+        let client = InMemoryHttpClient::new();
+        let base = "http://aggregator";
+        let orch = OrchestrationClient::with_client(
+            base.to_string(),
+            "cid-abc".to_string(),
+            Arc::new(client),
+        );
+
+        assert_eq!(orch.collector_id(), "cid-abc");
+    }
+
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn test_spawn_heartbeat_task_logs_on_failure() {
+        let mock = Arc::new(InMemoryHttpClient::new());
+        let base = "http://aggregator";
+        let url = format!("{}/heartbeat/cid", base);
+        mock.set_response(
+            &url,
+            Ok(error_response(503, "unavailable")),
+        );
+
+        let client: Arc<dyn HttpClient> = mock.clone();
+        let orch = OrchestrationClient::with_client(
+            base.to_string(),
+            "cid".to_string(),
+            client,
+        );
+
+        let handle = orch.spawn_heartbeat_task(Duration::from_secs(1));
+        tokio::task::yield_now().await;
+        tokio::time::advance(Duration::from_secs(1)).await;
+        tokio::task::yield_now().await;
+        handle.abort();
+        let _ = handle.await;
+
+        assert!(mock.request_count(&url) >= 1);
+    }
+
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn test_spawn_heartbeat_task_sends_repeatedly() {
+        let mock = Arc::new(InMemoryHttpClient::new());
+        let base = "http://aggregator";
+        let url = format!("{}/heartbeat/cid", base);
+        mock.set_response_sequence(
+            &url,
+            vec![
+                Ok(ok_json(serde_json::json!({}))),
+                Ok(ok_json(serde_json::json!({}))),
+                Ok(ok_json(serde_json::json!({}))),
+            ],
+        );
+
+        let client: Arc<dyn HttpClient> = mock.clone();
+        let orch = OrchestrationClient::with_client(
+            base.to_string(),
+            "cid".to_string(),
+            client,
+        );
+
+        let handle = orch.spawn_heartbeat_task(Duration::from_secs(1));
+        // Let the spawned task start up and fire its first immediate tick.
+        tokio::task::yield_now().await;
+        // Advance the clock past two more scheduled ticks.
+        tokio::time::advance(Duration::from_secs(3)).await;
+        tokio::task::yield_now().await;
+        handle.abort();
+        let _ = handle.await;
+
+        assert!(mock.request_count(&url) >= 2);
+    }
+
+    #[test]
+    fn test_debug_format_contains_struct_name() {
+        let client = InMemoryHttpClient::new();
+        let orch = OrchestrationClient::with_client(
+            "http://aggregator".to_string(),
+            "cid-debug".to_string(),
+            Arc::new(client),
+        );
+
+        let debug = format!("{:?}", orch);
+        assert!(debug.contains("OrchestrationClient"));
+        assert!(debug.contains("http://aggregator"));
+        assert!(debug.contains("cid-debug"));
     }
 }

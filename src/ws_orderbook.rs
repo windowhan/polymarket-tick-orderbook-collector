@@ -47,6 +47,7 @@ pub struct OrderbookCollector {
     s3_bucket: Option<String>,
     s3_prefix: Option<String>,
     aws_region: String,
+    ws_url: Option<String>,
 }
 
 impl OrderbookCollector {
@@ -70,6 +71,7 @@ impl OrderbookCollector {
             s3_bucket: None,
             s3_prefix: None,
             aws_region: "us-east-1".to_string(),
+            ws_url: None,
         }
     }
 
@@ -91,6 +93,12 @@ impl OrderbookCollector {
         self.s3_bucket = Some(bucket);
         self.s3_prefix = Some(prefix);
         self.aws_region = region;
+        self
+    }
+
+    #[cfg(test)]
+    fn with_ws_url(mut self, url: String) -> Self {
+        self.ws_url = Some(url);
         self
     }
 
@@ -180,6 +188,7 @@ impl OrderbookCollector {
             let s3_prefix = s3_prefix.clone();
             let orchestration_client = orchestration_client.clone();
             let collector_id = collector_id.clone();
+            let ws_url = self.ws_url.clone();
             let handle = tokio::spawn(async move {
                 let mut worker = OrderbookWorker::new(
                     id,
@@ -193,6 +202,7 @@ impl OrderbookCollector {
                     s3_prefix,
                     collector_id,
                     orchestration_client,
+                    ws_url,
                 );
                 if let Err(e) = worker.run().await {
                     warn!(worker_id = id, error = %e, "Worker failed");
@@ -246,6 +256,7 @@ struct OrderbookWorker {
     s3_prefix: Option<String>,
     collector_id: Option<String>,
     orchestration_client: Option<OrchestrationClient>,
+    ws_url: Option<String>,
 }
 
 impl OrderbookWorker {
@@ -262,6 +273,7 @@ impl OrderbookWorker {
         s3_prefix: Option<String>,
         collector_id: Option<String>,
         orchestration_client: Option<OrchestrationClient>,
+        ws_url: Option<String>,
     ) -> Self {
         // Ensure the output directory exists and use an absolute path so that
         // rotated file paths can be reliably stripped to compute S3 keys.
@@ -285,6 +297,7 @@ impl OrderbookWorker {
             s3_prefix,
             collector_id,
             orchestration_client,
+            ws_url,
         }
     }
 
@@ -407,8 +420,9 @@ impl OrderbookWorker {
     }
 
     async fn connect_and_collect(&mut self) -> Result<()> {
-        let (ws_stream, _) =
-            connect_async("wss://ws-subscriptions-clob.polymarket.com/ws/market").await?;
+        const DEFAULT_WS_URL: &str = "wss://ws-subscriptions-clob.polymarket.com/ws/market";
+        let url = self.ws_url.as_deref().unwrap_or(DEFAULT_WS_URL);
+        let (ws_stream, _) = connect_async(url).await?;
         let (mut write, mut read) = ws_stream.split();
 
         let payload = json!({
@@ -703,4 +717,1031 @@ async fn upload_rotated_file(
 
     info!(key = %key, "Uploaded and notified");
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::aggregate_s3::{InMemoryS3Service, S3Object, S3Service};
+    use crate::http_client::{HttpResponse, InMemoryHttpClient};
+    use async_trait::async_trait;
+    use tempfile::tempdir;
+
+    fn test_worker(dir: &tempfile::TempDir) -> OrderbookWorker {
+        OrderbookWorker::new(
+            0,
+            vec!["token1".to_string()],
+            dir.path().to_path_buf(),
+            None,
+            Duration::from_secs(60),
+            Arc::new(AtomicBool::new(false)),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+    }
+
+    #[test]
+    fn test_handle_message_book() {
+        let mut worker = test_worker(&tempdir().unwrap());
+        let text = r#"{"event_type":"book","asset_id":"token1","bids":[["0.1","100"]],"asks":[["0.2","50"]],"timestamp":1234}"#;
+        worker.handle_message(text).unwrap();
+        assert_eq!(worker.buffer.len(), 2); // one bid + one ask
+        assert_eq!(worker.buffer[0].event_type, "book");
+        assert_eq!(worker.buffer[0].asset, "token1");
+    }
+
+    #[test]
+    fn test_handle_message_price_change_nested() {
+        let mut worker = test_worker(&tempdir().unwrap());
+        let text = r#"{"event_type":"price_change","price_changes":[{"asset_id":"token1","price":"0.15","size":"200","side":"SELL"}],"timestamp":1234}"#;
+        worker.handle_message(text).unwrap();
+        assert_eq!(worker.buffer.len(), 1);
+        assert_eq!(worker.buffer[0].event_type, "price_change");
+        assert_eq!(worker.buffer[0].price, Some(0.15));
+        assert_eq!(worker.buffer[0].side, Some("SELL".to_string()));
+    }
+
+    #[test]
+    fn test_handle_message_price_change_nested_token_id() {
+        let mut worker = test_worker(&tempdir().unwrap());
+        let text = r#"{"event_type":"price_change","price_changes":[{"token_id":"token1","price":"0.16","size":"250"}],"timestamp":1234}"#;
+        worker.handle_message(text).unwrap();
+        assert_eq!(worker.buffer.len(), 1);
+        assert_eq!(worker.buffer[0].asset, "token1");
+        assert_eq!(worker.buffer[0].event_type, "price_change");
+    }
+
+    #[test]
+    fn test_handle_message_price_change_flat() {
+        let mut worker = test_worker(&tempdir().unwrap());
+        let text = r#"{"event_type":"price_change","asset_id":"token1","price":"0.16","size":"300","timestamp":1234}"#;
+        worker.handle_message(text).unwrap();
+        assert_eq!(worker.buffer.len(), 1);
+        assert_eq!(worker.buffer[0].event_type, "price_change");
+    }
+
+    #[test]
+    fn test_handle_message_last_trade() {
+        let mut worker = test_worker(&tempdir().unwrap());
+        let text = r#"{"event_type":"last_trade_price","asset_id":"token1","price":"0.5","size":"10","side":"BUY","transaction_hash":"0xabc","timestamp":"1234"}"#;
+        worker.handle_message(text).unwrap();
+        assert_eq!(worker.buffer.len(), 1);
+        assert_eq!(worker.buffer[0].event_type, "last_trade");
+        assert_eq!(worker.buffer[0].price, Some(0.5));
+        assert_eq!(worker.buffer[0].side, Some("BUY".to_string()));
+    }
+
+    #[test]
+    fn test_handle_message_unknown_type() {
+        let mut worker = test_worker(&tempdir().unwrap());
+        let text = r#"{"event_type":"unknown","asset_id":"token1"}"#;
+        worker.handle_message(text).unwrap();
+        assert!(worker.buffer.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_upload_rotated_file_success() {
+        let dir = tempdir().unwrap();
+        let s3 = InMemoryS3Service::default();
+        let local_path = dir.path().join("2025-06-08").join("12").join("12_00_worker_0.jsonl");
+        tokio::fs::create_dir_all(local_path.parent().unwrap()).await.unwrap();
+        tokio::fs::write(&local_path, b"{\"v\":1}\n").await.unwrap();
+
+        upload_rotated_file(
+            &s3,
+            "bucket",
+            "orderbook/",
+            "cid",
+            dir.path(),
+            &local_path,
+            None,
+        )
+        .await
+        .unwrap();
+
+        assert!(!local_path.exists());
+        let objects = s3.list_objects("bucket", "orderbook/").await.unwrap();
+        assert_eq!(objects.len(), 1);
+        assert!(objects[0].key.contains("orderbook/cid/"));
+    }
+
+    #[tokio::test]
+    async fn test_upload_rotated_file_notifies() {
+        let dir = tempdir().unwrap();
+        let s3 = InMemoryS3Service::default();
+        let http = InMemoryHttpClient::new();
+        http.set_response(
+            "http://aggregator/notify",
+            Ok(HttpResponse {
+                status: 200,
+                body: "{}".to_string(),
+            }),
+        );
+        let client = OrchestrationClient::with_client(
+            "http://aggregator".to_string(),
+            "cid".to_string(),
+            Arc::new(http),
+        );
+
+        let local_path = dir.path().join("2025-06-08").join("12").join("12_00_worker_0.jsonl");
+        tokio::fs::create_dir_all(local_path.parent().unwrap()).await.unwrap();
+        tokio::fs::write(&local_path, b"{\"v\":1}\n").await.unwrap();
+
+        upload_rotated_file(
+            &s3,
+            "bucket",
+            "orderbook/",
+            "cid",
+            dir.path(),
+            &local_path,
+            Some(&client),
+        )
+        .await
+        .unwrap();
+
+        assert!(!local_path.exists());
+    }
+
+    #[tokio::test]
+    async fn test_flush_local_writes_and_uploads_on_rotation() {
+        let dir = tempdir().unwrap();
+        let s3 = Arc::new(InMemoryS3Service::default());
+        let http = InMemoryHttpClient::new();
+        http.set_response(
+            "http://aggregator/notify",
+            Ok(HttpResponse {
+                status: 200,
+                body: "{}".to_string(),
+            }),
+        );
+        let client = OrchestrationClient::with_client(
+            "http://aggregator".to_string(),
+            "cid".to_string(),
+            Arc::new(http),
+        );
+
+        let mut worker = OrderbookWorker::new(
+            0,
+            vec!["token1".to_string()],
+            dir.path().to_path_buf(),
+            None,
+            Duration::from_secs(60),
+            Arc::new(AtomicBool::new(false)),
+            Some(s3.clone()),
+            Some("bucket".to_string()),
+            Some("orderbook/".to_string()),
+            Some("cid".to_string()),
+            Some(client),
+            None,
+        );
+
+        // Write into the first window, then rotate to the next minute.
+        worker
+            .handle_message(r#"{"event_type":"last_trade_price","asset_id":"token1","price":"0.5","size":"1","timestamp":1}"#)
+            .unwrap();
+        worker.flush().await.unwrap();
+        let first_path = worker.writer.as_ref().unwrap().current_path().unwrap().clone();
+
+        let next_window = worker.writer.as_ref().unwrap().current_window.unwrap()
+            + chrono::Duration::minutes(1);
+        worker.writer.as_mut().unwrap().rotate_to(next_window).await.unwrap();
+
+        // After rotation, the previous file should be queued for upload.
+        let rotated = worker.writer.as_mut().unwrap().take_rotated_path();
+        assert_eq!(rotated, Some(first_path));
+
+        // Trigger the upload synchronously for the test.
+        if let Some(path) = rotated {
+            upload_rotated_file(
+                &*s3,
+                "bucket",
+                "orderbook/",
+                "cid",
+                &worker.output_dir,
+                &path,
+                worker.orchestration_client.as_ref(),
+            )
+            .await
+            .unwrap();
+        }
+
+        let objects = s3.list_objects("bucket", "orderbook/").await.unwrap();
+        assert_eq!(objects.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_flush_relay_success() {
+        let dir = tempdir().unwrap();
+        let mut worker = OrderbookWorker::new(
+            0,
+            vec!["token1".to_string()],
+            dir.path().to_path_buf(),
+            Some("http://relay".to_string()),
+            Duration::from_secs(60),
+            Arc::new(AtomicBool::new(false)),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+        worker
+            .handle_message(r#"{"event_type":"last_trade_price","asset_id":"token1","price":"0.5","size":"1","timestamp":1}"#)
+            .unwrap();
+        // Without a mock relay server this will fail and restore the buffer.
+        worker.flush().await.unwrap();
+        assert_eq!(worker.buffer.len(), 1);
+    }
+
+    #[test]
+    fn test_collector_builder_methods() {
+        let collector = OrderbookCollector::new(
+            vec!["t1".to_string()],
+            PathBuf::from("/tmp"),
+            None,
+            10,
+            Duration::from_secs(60),
+            Some(60),
+        )
+        .with_aggregator_url("http://agg".to_string())
+        .with_s3_upload("bucket".to_string(), "prefix/".to_string(), "us-west-2".to_string());
+
+        assert!(collector.aggregator_url.is_some());
+        assert_eq!(collector.s3_bucket, Some("bucket".to_string()));
+        assert_eq!(collector.s3_prefix, Some("prefix/".to_string()));
+        assert_eq!(collector.aws_region, "us-west-2");
+    }
+
+    #[test]
+    fn test_handle_message_book_missing_bids_asks() {
+        let mut worker = test_worker(&tempdir().unwrap());
+        let text = r#"{"event_type":"book","asset_id":"token1","timestamp":1234}"#;
+        worker.handle_message(text).unwrap();
+        assert!(worker.buffer.is_empty());
+    }
+
+    #[test]
+    fn test_handle_message_last_trade_no_side() {
+        let mut worker = test_worker(&tempdir().unwrap());
+        let text = r#"{"event_type":"last_trade_price","asset_id":"token1","price":"0.5","size":"10","timestamp":"1234"}"#;
+        worker.handle_message(text).unwrap();
+        assert_eq!(worker.buffer.len(), 1);
+        assert_eq!(worker.buffer[0].side, None);
+    }
+
+    #[test]
+    fn test_handle_message_invalid_json() {
+        let mut worker = test_worker(&tempdir().unwrap());
+        assert!(worker.handle_message("not json").is_err());
+    }
+
+    #[tokio::test]
+    async fn test_flush_empty_buffer() {
+        let mut worker = test_worker(&tempdir().unwrap());
+        worker.flush().await.unwrap();
+        assert!(worker.buffer.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_upload_rotated_file_missing_local() {
+        let dir = tempdir().unwrap();
+        let s3 = InMemoryS3Service::default();
+        let path = dir.path().join("missing.jsonl");
+        assert!(upload_rotated_file(&s3, "b", "p/", "c", dir.path(), &path, None)
+            .await
+            .is_err());
+    }
+
+    #[tokio::test]
+    async fn test_upload_rotated_file_not_under_output_dir() {
+        let dir = tempdir().unwrap();
+        let other = tempdir().unwrap();
+        let s3 = InMemoryS3Service::default();
+        let path = other.path().join("file.jsonl");
+        tokio::fs::write(&path, b"x").await.unwrap();
+        assert!(upload_rotated_file(&s3, "b", "p/", "c", dir.path(), &path, None)
+            .await
+            .is_err());
+    }
+
+    #[tokio::test]
+    async fn test_upload_rotated_file_notify_failure_preserves_local() {
+        let dir = tempdir().unwrap();
+        let s3 = InMemoryS3Service::default();
+        let http = InMemoryHttpClient::new();
+        http.set_response(
+            "http://aggregator/notify",
+            Err("notify failed".to_string()),
+        );
+        let client = OrchestrationClient::with_client(
+            "http://aggregator".to_string(),
+            "cid".to_string(),
+            Arc::new(http),
+        );
+
+        let local_path = dir.path().join("file.jsonl");
+        tokio::fs::write(&local_path, b"x").await.unwrap();
+
+        let result = upload_rotated_file(
+            &s3,
+            "bucket",
+            "orderbook/",
+            "cid",
+            dir.path(),
+            &local_path,
+            Some(&client),
+        )
+        .await;
+        assert!(result.is_err());
+        assert!(local_path.exists());
+    }
+
+    // Helpers for the tests below.
+    async fn run_ws_server(
+        addr_tx: tokio::sync::oneshot::Sender<std::net::SocketAddr>,
+        messages: Vec<Message>,
+        shutdown: Arc<AtomicBool>,
+    ) {
+        use futures::stream::StreamExt;
+        use tokio::net::TcpListener;
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        addr_tx.send(listener.local_addr().unwrap()).unwrap();
+        let (stream, _) = listener.accept().await.unwrap();
+        let (mut write, mut read) = tokio_tungstenite::accept_async(stream).await.unwrap().split();
+        // Wait for the client's subscription message.
+        let _ = read.next().await;
+        // Give the client time to enter its read loop before flooding messages.
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        for msg in messages {
+            write.send(msg).await.unwrap();
+        }
+        // Keep the socket open until the test signals shutdown.
+        while !shutdown.load(Ordering::Relaxed) {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        let _ = write.close().await;
+    }
+
+    #[tokio::test]
+    async fn test_connect_and_collect_handles_ping_pong_and_close() {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let server_shutdown = Arc::new(AtomicBool::new(false));
+        let ssd = server_shutdown.clone();
+        let book = r#"{"event_type":"book","asset_id":"token1","bids":[["0.1","100"]],"asks":[["0.2","50"]],"timestamp":1234}"#;
+        tokio::spawn(async move {
+            run_ws_server(
+                tx,
+                vec![
+                    Message::Ping(vec![]),
+                    Message::Text(book.to_string()),
+                    Message::Text("PONG".to_string()),
+                ],
+                ssd,
+            )
+            .await;
+        });
+        let addr = rx.await.unwrap();
+        let url = format!("ws://{}", addr);
+
+        let shutdown = Arc::new(AtomicBool::new(false));
+        let mut worker = OrderbookWorker::new(
+            0,
+            vec!["token1".to_string()],
+            tempdir().unwrap().path().to_path_buf(),
+            None,
+            Duration::from_secs(60),
+            shutdown.clone(),
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(url),
+        );
+
+        // Let the worker run long enough to process the incoming frames.
+        let sd = shutdown.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(800)).await;
+            sd.store(true, Ordering::Relaxed);
+        });
+
+        let result = tokio::time::timeout(Duration::from_secs(5), worker.connect_and_collect()).await;
+        server_shutdown.store(true, Ordering::Relaxed);
+        result.unwrap().unwrap();
+        assert!(!worker.buffer.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_worker_run_flushes_and_exits() {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let server_shutdown = Arc::new(AtomicBool::new(false));
+        let ssd = server_shutdown.clone();
+        tokio::spawn(async move {
+            run_ws_server(tx, vec![Message::Close(None)], ssd).await;
+        });
+        let addr = rx.await.unwrap();
+        let url = format!("ws://{}", addr);
+
+        let mut worker = OrderbookWorker::new(
+            0,
+            vec!["token1".to_string()],
+            tempdir().unwrap().path().to_path_buf(),
+            None,
+            Duration::from_secs(60),
+            Arc::new(AtomicBool::new(false)),
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(url),
+        );
+        worker.handle_message(r#"{"event_type":"last_trade_price","asset_id":"token1","price":"0.5","size":"1","timestamp":1}"#).unwrap();
+
+        tokio::time::timeout(Duration::from_secs(5), worker.run())
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(worker.buffer.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_collector_run_static_with_duration() {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let server_shutdown = Arc::new(AtomicBool::new(false));
+        let ssd = server_shutdown.clone();
+        tokio::spawn(async move {
+            run_ws_server(tx, vec![Message::Text("PONG".to_string())], ssd).await;
+        });
+        let addr = rx.await.unwrap();
+        let url = format!("ws://{}", addr);
+
+        let dir = tempdir().unwrap();
+        let collector = OrderbookCollector::new(
+            vec!["token1".to_string()],
+            dir.path().to_path_buf(),
+            None,
+            100,
+            Duration::from_secs(60),
+            Some(1),
+        )
+        .with_ws_url(url);
+
+        tokio::time::timeout(Duration::from_secs(10), collector.run())
+            .await
+            .unwrap()
+            .unwrap();
+        server_shutdown.store(true, Ordering::Relaxed);
+    }
+
+    #[tokio::test]
+    async fn test_flush_relay_success_mock_server() {
+        use axum::{routing::post, Router};
+        let dir = tempdir().unwrap();
+        let app = Router::new().route(
+            "/",
+            post(|body: String| async move {
+                assert!(!body.is_empty());
+                "ok"
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+
+        let mut worker = OrderbookWorker::new(
+            0,
+            vec!["token1".to_string()],
+            dir.path().to_path_buf(),
+            Some(format!("http://127.0.0.1:{}/", port)),
+            Duration::from_secs(60),
+            Arc::new(AtomicBool::new(false)),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+        worker.handle_message(r#"{"event_type":"last_trade_price","asset_id":"token1","price":"0.5","size":"1","timestamp":1}"#).unwrap();
+        worker.flush().await.unwrap();
+        assert!(worker.buffer.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_flush_spawns_upload_task_on_rotation() {
+        let dir = tempdir().unwrap();
+        let s3 = Arc::new(InMemoryS3Service::default());
+        let http = InMemoryHttpClient::new();
+        http.set_response(
+            "http://aggregator/notify",
+            Ok(HttpResponse {
+                status: 200,
+                body: "{}".to_string(),
+            }),
+        );
+        let client = OrchestrationClient::with_client(
+            "http://aggregator".to_string(),
+            "cid".to_string(),
+            Arc::new(http),
+        );
+
+        let mut worker = OrderbookWorker::new(
+            0,
+            vec!["token1".to_string()],
+            dir.path().to_path_buf(),
+            None,
+            Duration::from_secs(60),
+            Arc::new(AtomicBool::new(false)),
+            Some(s3.clone()),
+            Some("bucket".to_string()),
+            Some("orderbook/".to_string()),
+            Some("cid".to_string()),
+            Some(client),
+            None,
+        );
+
+        worker.handle_message(r#"{"event_type":"last_trade_price","asset_id":"token1","price":"0.5","size":"1","timestamp":1}"#).unwrap();
+        worker.flush().await.unwrap();
+        let first_path = worker.writer.as_ref().unwrap().current_path().unwrap().clone();
+
+        // Manually queue the current file as rotated so the next flush spawns the upload task.
+        worker.writer.as_mut().unwrap().rotated_path = Some(first_path.clone());
+
+        worker.handle_message(r#"{"event_type":"last_trade_price","asset_id":"token1","price":"0.6","size":"2","timestamp":2}"#).unwrap();
+        worker.flush().await.unwrap();
+
+        // Wait for the background upload task.
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        assert!(!first_path.exists());
+        let objects = s3.list_objects("bucket", "orderbook/").await.unwrap();
+        assert_eq!(objects.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_flush_relay_non_success_restores_buffer() {
+        use axum::{http::StatusCode, routing::post, Router};
+        let dir = tempdir().unwrap();
+        let app = Router::new().route("/", post(|| async { StatusCode::SERVICE_UNAVAILABLE }));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+
+        let mut worker = OrderbookWorker::new(
+            0,
+            vec!["token1".to_string()],
+            dir.path().to_path_buf(),
+            Some(format!("http://127.0.0.1:{}/", port)),
+            Duration::from_secs(60),
+            Arc::new(AtomicBool::new(false)),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+        worker
+            .handle_message(r#"{"event_type":"last_trade_price","asset_id":"token1","price":"0.5","size":"1","timestamp":1}"#)
+            .unwrap();
+        worker.flush().await.unwrap();
+        assert_eq!(worker.buffer.len(), 1);
+    }
+
+    /// S3 service whose `put_object` always fails, used to exercise error paths.
+    struct FailingS3Service;
+
+    #[async_trait]
+    impl S3Service for FailingS3Service {
+        async fn list_objects(&self, _bucket: &str, _prefix: &str) -> Result<Vec<S3Object>> {
+            Ok(vec![])
+        }
+
+        async fn get_object(&self, _bucket: &str, _key: &str) -> Result<Vec<u8>> {
+            anyhow::bail!("get failed")
+        }
+
+        async fn put_object(&self, _bucket: &str, _key: &str, _body: Vec<u8>) -> Result<()> {
+            anyhow::bail!("put failed")
+        }
+
+        async fn delete_object(&self, _bucket: &str, _key: &str) -> Result<()> {
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn test_upload_rotated_file_s3_put_failure() {
+        let dir = tempdir().unwrap();
+        let s3 = FailingS3Service;
+        let local_path = dir.path().join("file.jsonl");
+        tokio::fs::write(&local_path, b"x").await.unwrap();
+
+        let result = upload_rotated_file(
+            &s3,
+            "bucket",
+            "orderbook/",
+            "cid",
+            dir.path(),
+            &local_path,
+            None,
+        )
+        .await;
+        assert!(result.is_err());
+        assert!(local_path.exists());
+    }
+
+    #[tokio::test]
+    async fn test_spawn_upload_task_logs_on_s3_failure() {
+        let dir = tempdir().unwrap();
+        let mut worker = OrderbookWorker::new(
+            0,
+            vec!["token1".to_string()],
+            dir.path().to_path_buf(),
+            None,
+            Duration::from_secs(60),
+            Arc::new(AtomicBool::new(false)),
+            Some(Arc::new(FailingS3Service)),
+            Some("bucket".to_string()),
+            Some("orderbook/".to_string()),
+            Some("cid".to_string()),
+            None,
+            None,
+        );
+
+        worker
+            .handle_message(r#"{"event_type":"last_trade_price","asset_id":"token1","price":"0.5","size":"1","timestamp":1}"#)
+            .unwrap();
+        worker.flush().await.unwrap();
+        let first_path = worker.writer.as_ref().unwrap().current_path().unwrap().clone();
+
+        // Manually queue the current file as rotated so the next flush spawns the upload task.
+        worker.writer.as_mut().unwrap().rotated_path = Some(first_path.clone());
+
+        worker
+            .handle_message(r#"{"event_type":"last_trade_price","asset_id":"token1","price":"0.6","size":"2","timestamp":2}"#)
+            .unwrap();
+        worker.flush().await.unwrap();
+
+        // Wait for the background upload task to fail and log.
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        assert!(first_path.exists());
+    }
+
+    async fn run_ws_server_error_then_close(
+        addr_tx: tokio::sync::oneshot::Sender<std::net::SocketAddr>,
+        shutdown: Arc<AtomicBool>,
+    ) {
+        use futures::stream::StreamExt;
+        use tokio::net::TcpListener;
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        addr_tx.send(listener.local_addr().unwrap()).unwrap();
+        let mut connection = 0usize;
+        loop {
+            if shutdown.load(Ordering::Relaxed) {
+                break;
+            }
+            let (stream, _) = listener.accept().await.unwrap();
+            let (mut write, mut read) = tokio_tungstenite::accept_async(stream)
+                .await
+                .unwrap()
+                .split();
+            // Wait for the client's subscription message.
+            let _ = read.next().await;
+            if connection == 0 {
+                write
+                    .send(Message::Text("not json".to_string()))
+                    .await
+                    .unwrap();
+                tokio::time::sleep(Duration::from_millis(100)).await;
+                let _ = write.close().await;
+            } else {
+                write.send(Message::Close(None)).await.unwrap();
+                while !shutdown.load(Ordering::Relaxed) {
+                    tokio::time::sleep(Duration::from_millis(50)).await;
+                }
+                break;
+            }
+            connection += 1;
+        }
+    }
+
+    #[tokio::test]
+    async fn test_worker_run_reconnects_after_error() {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let shutdown = Arc::new(AtomicBool::new(false));
+        let sd = shutdown.clone();
+        tokio::spawn(async move { run_ws_server_error_then_close(tx, sd).await });
+        let addr = rx.await.unwrap();
+        let url = format!("ws://{}", addr);
+
+        let mut worker = OrderbookWorker::new(
+            0,
+            vec!["token1".to_string()],
+            tempdir().unwrap().path().to_path_buf(),
+            None,
+            Duration::from_secs(60),
+            Arc::new(AtomicBool::new(false)),
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(url),
+        );
+
+        tokio::time::timeout(Duration::from_secs(15), worker.run())
+            .await
+            .unwrap()
+            .unwrap();
+        shutdown.store(true, Ordering::Relaxed);
+    }
+
+    #[tokio::test]
+    async fn test_binary_frame_is_ignored() {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let server_shutdown = Arc::new(AtomicBool::new(false));
+        let ssd = server_shutdown.clone();
+        tokio::spawn(async move {
+            run_ws_server(tx, vec![Message::Binary(vec![1, 2, 3])], ssd).await;
+        });
+        let addr = rx.await.unwrap();
+        let url = format!("ws://{}", addr);
+
+        let shutdown = Arc::new(AtomicBool::new(false));
+        let sd = shutdown.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(500)).await;
+            sd.store(true, Ordering::Relaxed);
+        });
+
+        let mut worker = OrderbookWorker::new(
+            0,
+            vec!["token1".to_string()],
+            tempdir().unwrap().path().to_path_buf(),
+            None,
+            Duration::from_secs(60),
+            shutdown,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(url),
+        );
+        tokio::time::timeout(Duration::from_secs(5), worker.connect_and_collect())
+            .await
+            .unwrap()
+            .unwrap();
+        server_shutdown.store(true, Ordering::Relaxed);
+        assert!(worker.buffer.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_buffer_size_triggers_flush() {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let server_shutdown = Arc::new(AtomicBool::new(false));
+        let ssd = server_shutdown.clone();
+        let messages: Vec<Message> = (0..1000)
+            .map(|i| {
+                Message::Text(format!(
+                    r#"{{"event_type":"last_trade_price","asset_id":"token1","price":"0.5","size":"1","timestamp":{}}}"#,
+                    i
+                ))
+            })
+            .collect();
+        tokio::spawn(async move { run_ws_server(tx, messages, ssd).await });
+        let addr = rx.await.unwrap();
+        let url = format!("ws://{}", addr);
+
+        let dir = tempdir().unwrap();
+        let shutdown = Arc::new(AtomicBool::new(false));
+        let sd = shutdown.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(1500)).await;
+            sd.store(true, Ordering::Relaxed);
+        });
+
+        let mut worker = OrderbookWorker::new(
+            0,
+            vec!["token1".to_string()],
+            dir.path().to_path_buf(),
+            None,
+            Duration::from_secs(60),
+            shutdown,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(url),
+        );
+        tokio::time::timeout(Duration::from_secs(10), worker.connect_and_collect())
+            .await
+            .unwrap()
+            .unwrap();
+        server_shutdown.store(true, Ordering::Relaxed);
+        assert!(worker.buffer.is_empty());
+    }
+
+    async fn run_minimal_aggregator(
+        addr_tx: tokio::sync::oneshot::Sender<std::net::SocketAddr>,
+        shutdown: Arc<AtomicBool>,
+    ) {
+        use axum::{
+            routing::{get, post},
+            Json, Router,
+        };
+        let app = Router::new()
+            .route(
+                "/register",
+                post(|| async { Json(serde_json::json!({ "collector_id": "test-cid" })) }),
+            )
+            .route(
+                "/assignment/:collector_id",
+                get(|| async {
+                    Json(serde_json::json!({
+                        "token_ids": ["token1"],
+                        "chunk_size": 1,
+                    }))
+                }),
+            )
+            .route("/heartbeat/:collector_id", post(|| async { "ok" }))
+            .route(
+                "/notify",
+                post(|| async { Json(serde_json::json!({ "received": true })) }),
+            );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        addr_tx.send(listener.local_addr().unwrap()).unwrap();
+        let shutdown_future = async move {
+            while !shutdown.load(Ordering::Relaxed) {
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+        };
+        axum::serve(listener, app)
+            .with_graceful_shutdown(shutdown_future)
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_collector_run_orchestrated_without_s3() {
+        let (ws_tx, ws_rx) = tokio::sync::oneshot::channel();
+        let ws_shutdown = Arc::new(AtomicBool::new(false));
+        let ws_shutdown_clone = ws_shutdown.clone();
+        tokio::spawn(async move {
+            run_ws_server(ws_tx, vec![Message::Text("PONG".to_string())], ws_shutdown_clone).await;
+        });
+        let ws_addr = ws_rx.await.unwrap();
+        let ws_url = format!("ws://{}", ws_addr);
+
+        let (agg_tx, agg_rx) = tokio::sync::oneshot::channel();
+        let agg_shutdown = Arc::new(AtomicBool::new(false));
+        let agg_shutdown_clone = agg_shutdown.clone();
+        tokio::spawn(async move {
+            run_minimal_aggregator(agg_tx, agg_shutdown_clone).await;
+        });
+        let agg_addr = agg_rx.await.unwrap();
+        let aggregator_url = format!("http://{}", agg_addr);
+
+        let dir = tempdir().unwrap();
+        let collector = OrderbookCollector::new(
+            vec![],
+            dir.path().to_path_buf(),
+            None,
+            100,
+            Duration::from_secs(60),
+            Some(1),
+        )
+        .with_aggregator_url(aggregator_url)
+        .with_ws_url(ws_url);
+
+        tokio::time::timeout(Duration::from_secs(10), collector.run())
+            .await
+            .unwrap()
+            .unwrap();
+        ws_shutdown.store(true, Ordering::Relaxed);
+        agg_shutdown.store(true, Ordering::Relaxed);
+    }
+
+    #[tokio::test]
+    async fn test_collector_run_orchestrated_with_s3_upload_path() {
+        let (ws_tx, ws_rx) = tokio::sync::oneshot::channel();
+        let ws_shutdown = Arc::new(AtomicBool::new(false));
+        let ws_shutdown_clone = ws_shutdown.clone();
+        tokio::spawn(async move {
+            run_ws_server(ws_tx, vec![Message::Text("PONG".to_string())], ws_shutdown_clone).await;
+        });
+        let ws_addr = ws_rx.await.unwrap();
+        let ws_url = format!("ws://{}", ws_addr);
+
+        let (agg_tx, agg_rx) = tokio::sync::oneshot::channel();
+        let agg_shutdown = Arc::new(AtomicBool::new(false));
+        let agg_shutdown_clone = agg_shutdown.clone();
+        tokio::spawn(async move {
+            run_minimal_aggregator(agg_tx, agg_shutdown_clone).await;
+        });
+        let agg_addr = agg_rx.await.unwrap();
+        let aggregator_url = format!("http://{}", agg_addr);
+
+        let dir = tempdir().unwrap();
+        let collector = OrderbookCollector::new(
+            vec![],
+            dir.path().to_path_buf(),
+            None,
+            100,
+            Duration::from_secs(60),
+            Some(1),
+        )
+        .with_aggregator_url(aggregator_url)
+        .with_s3_upload("bucket".to_string(), "orderbook/".to_string(), "us-east-1".to_string())
+        .with_ws_url(ws_url);
+
+        tokio::time::timeout(Duration::from_secs(10), collector.run())
+            .await
+            .unwrap()
+            .unwrap();
+        ws_shutdown.store(true, Ordering::Relaxed);
+        agg_shutdown.store(true, Ordering::Relaxed);
+    }
+
+    #[tokio::test]
+    async fn test_collector_run_static_with_sigint_shutdown() {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let server_shutdown = Arc::new(AtomicBool::new(false));
+        let ssd = server_shutdown.clone();
+        tokio::spawn(async move {
+            run_ws_server(tx, vec![Message::Text("PONG".to_string())], ssd).await;
+        });
+        let addr = rx.await.unwrap();
+        let url = format!("ws://{}", addr);
+
+        let dir = tempdir().unwrap();
+        let collector = OrderbookCollector::new(
+            vec!["token1".to_string()],
+            dir.path().to_path_buf(),
+            None,
+            100,
+            Duration::from_secs(60),
+            None,
+        )
+        .with_ws_url(url);
+
+        let pid = std::process::id() as libc::pid_t;
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(1200)).await;
+            unsafe {
+                let _ = libc::kill(pid, libc::SIGINT);
+            }
+        });
+
+        tokio::time::timeout(Duration::from_secs(10), collector.run())
+            .await
+            .unwrap()
+            .unwrap();
+        server_shutdown.store(true, Ordering::Relaxed);
+    }
+
+    #[tokio::test]
+    async fn test_collector_run_with_duration_and_sigint() {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let server_shutdown = Arc::new(AtomicBool::new(false));
+        let ssd = server_shutdown.clone();
+        tokio::spawn(async move {
+            run_ws_server(tx, vec![Message::Text("PONG".to_string())], ssd).await;
+        });
+        let addr = rx.await.unwrap();
+        let url = format!("ws://{}", addr);
+
+        let dir = tempdir().unwrap();
+        let collector = OrderbookCollector::new(
+            vec!["token1".to_string()],
+            dir.path().to_path_buf(),
+            None,
+            100,
+            Duration::from_secs(60),
+            Some(10),
+        )
+        .with_ws_url(url);
+
+        let pid = std::process::id() as libc::pid_t;
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(800)).await;
+            unsafe {
+                let _ = libc::kill(pid, libc::SIGINT);
+            }
+        });
+
+        tokio::time::timeout(Duration::from_secs(10), collector.run())
+            .await
+            .unwrap()
+            .unwrap();
+        server_shutdown.store(true, Ordering::Relaxed);
+    }
 }

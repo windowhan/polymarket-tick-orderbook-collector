@@ -92,6 +92,132 @@ pub fn analyze_rewards(path: &Path) -> Result<Vec<RewardBucket>> {
     Ok(buckets)
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::market_discovery::{ClobReward, Market};
+    use tempfile::tempdir;
+
+    fn market(active: bool, daily_rate: f64, spread: Option<f64>, competitive: Option<f64>) -> Market {
+        Market {
+            id: "id".to_string(),
+            condition_id: "cond".to_string(),
+            question: "q".to_string(),
+            slug: "s".to_string(),
+            description: None,
+            active,
+            closed: false,
+            archived: false,
+            end_date: None,
+            start_date: None,
+            created_at: None,
+            updated_at: None,
+            volume: Some(100.0),
+            liquidity: Some(200.0),
+            volume_24h: Some(50.0),
+            outcomes: None,
+            outcome_prices: None,
+            token_ids: vec!["t1".to_string()],
+            enable_order_book: true,
+            order_min_size: None,
+            order_price_min_tick_size: None,
+            neg_risk: false,
+            accepting_orders: true,
+            clob_rewards: if daily_rate > 0.0 {
+                vec![ClobReward {
+                    id: None,
+                    condition_id: None,
+                    asset_address: None,
+                    rewards_amount: None,
+                    rewards_daily_rate: Some(daily_rate),
+                    start_date: None,
+                    end_date: None,
+                }]
+            } else {
+                vec![]
+            },
+            rewards_min_size: None,
+            rewards_max_spread: spread,
+            competitive,
+        }
+    }
+
+    #[test]
+    fn test_analyze_rewards_all_buckets() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("markets.jsonl");
+        let markets = vec![
+            market(true, 0.0, None, None),
+            market(true, 3.0, Some(0.01), Some(0.5)),
+            market(true, 10.0, Some(0.02), None),
+            market(true, 50.0, None, Some(0.7)),
+            market(true, 200.0, Some(0.03), None),
+            market(true, 600.0, None, Some(0.9)),
+        ];
+        let mut content = String::new();
+        for m in markets {
+            content.push_str(&serde_json::to_string(&m).unwrap());
+            content.push('\n');
+        }
+        std::fs::write(&path, content).unwrap();
+
+        let buckets = analyze_rewards(&path).unwrap();
+        assert_eq!(buckets[0].count, 1); // No Reward
+        assert_eq!(buckets[1].count, 1); // Micro
+        assert_eq!(buckets[2].count, 1); // Small
+        assert_eq!(buckets[3].count, 1); // Medium
+        assert_eq!(buckets[4].count, 1); // Large
+        assert_eq!(buckets[5].count, 1); // Whale
+    }
+
+    #[test]
+    fn test_analyze_rewards_skips_inactive() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("markets.jsonl");
+        let m = market(false, 100.0, None, None);
+        std::fs::write(&path, serde_json::to_string(&m).unwrap()).unwrap();
+
+        let buckets = analyze_rewards(&path).unwrap();
+        assert_eq!(buckets.iter().map(|b| b.count).sum::<usize>(), 0);
+    }
+
+    #[test]
+    fn test_analyze_rewards_ignores_bad_lines() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("markets.jsonl");
+        std::fs::write(&path, "not valid json\n").unwrap();
+
+        let buckets = analyze_rewards(&path).unwrap();
+        assert_eq!(buckets.iter().map(|b| b.count).sum::<usize>(), 0);
+    }
+
+    #[test]
+    fn test_print_reward_analysis() {
+        let buckets = vec![
+            RewardBucket {
+                label: "No Reward",
+                count: 0,
+                ..Default::default()
+            },
+            RewardBucket {
+                label: "Micro (0-5]",
+                count: 2,
+                total_daily_reward: 10.0,
+                total_liquidity: 400.0,
+                total_volume_24h: 100.0,
+                total_volume: 200.0,
+                total_max_spread: 0.02,
+                max_spread_count: 2,
+                token_count: 4,
+                total_competitive: 1.0,
+                competitive_count: 2,
+            },
+        ];
+        // Just ensure it doesn't panic.
+        print_reward_analysis(&buckets);
+    }
+}
+
 pub fn print_reward_analysis(buckets: &[RewardBucket]) {
     println!(
         "{:<20} {:>8} {:>14} {:>14} {:>14} {:>14} {:>14} {:>12} {:>14}",

@@ -2389,6 +2389,7 @@ dependencies = [
  "flate2",
  "futures",
  "hex",
+ "libc",
  "mockall",
  "rayon",
  "reqwest",

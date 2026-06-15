@@ -399,4 +399,165 @@ mod tests {
             .unwrap();
         assert_eq!(body, b"hello");
     }
+
+    #[tokio::test]
+    async fn test_aggregate_s3_malformed_json() {
+        let s3 = InMemoryS3Service::default();
+        s3.objects.lock().unwrap().insert(
+            "orderbook/2025-06-08/12/file.jsonl".to_string(),
+            b"{\"v\":1}\nnot json\n".to_vec(),
+        );
+
+        let dir = tempdir().unwrap();
+        let output = dir.path().join("merged.jsonl");
+        let opts = AggregateOptions {
+            bucket: "test-bucket".to_string(),
+            prefix: "orderbook/".to_string(),
+            output_path: output.clone(),
+            delete_after_merge: false,
+        };
+
+        let summary = aggregate_s3(&s3, &opts).await.unwrap();
+        assert_eq!(summary.objects_processed, 1);
+        assert_eq!(summary.lines_merged, 1);
+
+        let merged = std::fs::read_to_string(&output).unwrap();
+        assert!(merged.contains("\"v\":1"));
+        assert!(merged.contains("not json"));
+    }
+
+    #[tokio::test]
+    async fn test_write_manifest() {
+        let dir = tempdir().unwrap();
+        let manifest_path = dir.path().join("manifest.json");
+        let opts = AggregateOptions {
+            bucket: "test-bucket".to_string(),
+            prefix: "orderbook/".to_string(),
+            output_path: dir.path().join("merged.jsonl"),
+            delete_after_merge: true,
+        };
+        let summary = AggregateSummary {
+            objects_processed: 5,
+            lines_merged: 100,
+            bytes_downloaded: 1024,
+        };
+
+        write_manifest(&manifest_path, summary, &opts).await.unwrap();
+        let content = tokio::fs::read_to_string(&manifest_path).await.unwrap();
+        assert!(content.contains("\"bucket\": \"test-bucket\""));
+        assert!(content.contains("\"lines_merged\": 100"));
+    }
+
+    #[tokio::test]
+    async fn test_in_memory_delete_object() {
+        let s3 = InMemoryS3Service::default();
+        s3.put_object("b", "k1", b"v1".to_vec()).await.unwrap();
+        s3.delete_object("b", "k1").await.unwrap();
+        assert!(s3.get_object("b", "k1").await.is_err());
+        assert!(s3.list_objects("b", "").await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_get_object_missing_error_context() {
+        let s3 = InMemoryS3Service::default();
+        let err = s3
+            .get_object("test-bucket", "missing/key.jsonl")
+            .await
+            .unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("object not found"));
+        assert!(msg.contains("missing/key.jsonl"));
+    }
+
+    #[tokio::test]
+    async fn test_aggregate_s3_empty_prefix_returns_zero_summary() {
+        let s3 = InMemoryS3Service::default();
+        let dir = tempdir().unwrap();
+        let opts = AggregateOptions {
+            bucket: "test-bucket".to_string(),
+            prefix: "does/not/exist/".to_string(),
+            output_path: dir.path().join("merged.jsonl"),
+            delete_after_merge: false,
+        };
+
+        let summary = aggregate_s3(&s3, &opts).await.unwrap();
+        assert_eq!(summary.objects_processed, 0);
+        assert_eq!(summary.lines_merged, 0);
+        assert_eq!(summary.bytes_downloaded, 0);
+    }
+
+    #[tokio::test]
+    async fn test_aggregate_s3_empty_objects_returns_zero_summary() {
+        let s3 = InMemoryS3Service::default();
+        s3.objects.lock().unwrap().insert(
+            "orderbook/2025-06-08/12/_manifest.json".to_string(),
+            b"skip me".to_vec(),
+        );
+
+        let dir = tempdir().unwrap();
+        let opts = AggregateOptions {
+            bucket: "test-bucket".to_string(),
+            prefix: "orderbook/".to_string(),
+            output_path: dir.path().join("merged.jsonl"),
+            delete_after_merge: false,
+        };
+
+        let summary = aggregate_s3(&s3, &opts).await.unwrap();
+        assert_eq!(summary.objects_processed, 0);
+        assert_eq!(summary.lines_merged, 0);
+        assert_eq!(summary.bytes_downloaded, 0);
+    }
+
+    #[tokio::test]
+    async fn test_aggregate_s3_writes_when_parent_dir_exists() {
+        let s3 = InMemoryS3Service::default();
+        s3.objects.lock().unwrap().insert(
+            "orderbook/2025-06-08/12/12_00_worker_0.jsonl".to_string(),
+            b"{\"v\":1}\n".to_vec(),
+        );
+
+        let dir = tempdir().unwrap();
+        let existing_parent = dir.path().join("existing");
+        tokio::fs::create_dir_all(&existing_parent).await.unwrap();
+        let output = existing_parent.join("nested").join("merged.jsonl");
+        let opts = AggregateOptions {
+            bucket: "test-bucket".to_string(),
+            prefix: "orderbook/".to_string(),
+            output_path: output.clone(),
+            delete_after_merge: false,
+        };
+
+        let summary = aggregate_s3(&s3, &opts).await.unwrap();
+        assert_eq!(summary.objects_processed, 1);
+        assert_eq!(summary.lines_merged, 1);
+
+        let merged = std::fs::read_to_string(&output).unwrap();
+        assert!(merged.contains("\"v\":1"));
+    }
+
+    #[tokio::test]
+    async fn test_aggregate_s3_malformed_and_empty_lines_still_written() {
+        let s3 = InMemoryS3Service::default();
+        s3.objects.lock().unwrap().insert(
+            "orderbook/2025-06-08/12/file.jsonl".to_string(),
+            b"{\"v\":1}\n\nnot json\n".to_vec(),
+        );
+
+        let dir = tempdir().unwrap();
+        let output = dir.path().join("merged.jsonl");
+        let opts = AggregateOptions {
+            bucket: "test-bucket".to_string(),
+            prefix: "orderbook/".to_string(),
+            output_path: output.clone(),
+            delete_after_merge: false,
+        };
+
+        let summary = aggregate_s3(&s3, &opts).await.unwrap();
+        assert_eq!(summary.objects_processed, 1);
+        assert_eq!(summary.lines_merged, 1);
+
+        let merged = std::fs::read_to_string(&output).unwrap();
+        assert!(merged.contains("\"v\":1"));
+        assert!(merged.contains("not json"));
+    }
 }

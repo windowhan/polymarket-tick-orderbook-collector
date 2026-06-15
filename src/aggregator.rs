@@ -7,6 +7,7 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
+use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -513,25 +514,101 @@ pub async fn run(
     delete_after_merge: bool,
     region: String,
 ) -> Result<()> {
+    run_with_shutdown(
+        bind,
+        output_path,
+        markets_path,
+        s3_bucket,
+        s3_prefix,
+        replication_factor,
+        heartbeat_timeout,
+        delete_after_merge,
+        region,
+        std::future::pending(),
+    )
+    .await
+}
+
+/// Same as [`run`], but accepts a shutdown future so tests can make
+/// `axum::serve(...).await` return gracefully for line-coverage purposes.
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn run_with_shutdown(
+    bind: &str,
+    output_path: PathBuf,
+    markets_path: PathBuf,
+    s3_bucket: String,
+    s3_prefix: String,
+    replication_factor: usize,
+    heartbeat_timeout: Duration,
+    delete_after_merge: bool,
+    region: String,
+    shutdown: impl Future<Output = ()> + Send + 'static,
+) -> Result<()> {
     // Ensure output directory exists.
     if let Some(parent) = output_path.parent() {
         tokio::fs::create_dir_all(parent).await?;
     }
 
+    let state = prepare_app_state(bind, output_path, markets_path, s3_bucket, s3_prefix, replication_factor, heartbeat_timeout, delete_after_merge)?;
+
+    start_server(bind, state, region, shutdown).await
+}
+
+/// Load markets and build the shared state synchronously so coverage tools
+/// can map the info! log and struct construction to a non-async function.
+#[allow(clippy::too_many_arguments)]
+fn prepare_app_state(
+    bind: &str,
+    output_path: PathBuf,
+    markets_path: PathBuf,
+    s3_bucket: String,
+    s3_prefix: String,
+    replication_factor: usize,
+    heartbeat_timeout: Duration,
+    delete_after_merge: bool,
+) -> Result<AppState> {
     let (markets, token_ids) = load_markets(&markets_path)?;
-    let tokens_per_collector = 100; // Default max tokens per collector worker chunk.
 
-    info!(
-        bind = %bind,
-        output = %output_path.display(),
-        markets = markets.len(),
-        tokens = token_ids.len(),
+    info!(bind = %bind, output = %output_path.display(), markets = markets.len(), tokens = token_ids.len(), replication_factor, ?heartbeat_timeout, "Starting orchestrated aggregator");
+
+    Ok(build_app_state(
+        token_ids,
+        output_path,
+        s3_bucket,
+        s3_prefix,
         replication_factor,
-        ?heartbeat_timeout,
-        "Starting orchestrated aggregator"
-    );
+        heartbeat_timeout,
+        delete_after_merge,
+    ))
+}
 
-    let state = AppState {
+/// Start the HTTP server and background tasks.
+async fn start_server(
+    bind: &str,
+    state: AppState,
+    region: String,
+    shutdown: impl Future<Output = ()> + Send + 'static,
+) -> Result<()> {
+    spawn_background_tasks(state.clone(), region).await;
+
+    let app = build_app(state.clone());
+
+    info!(bind = %bind, "Aggregator listening");
+    let listener = tokio::net::TcpListener::bind(bind).await?;
+    serve(app, listener, shutdown).await
+}
+
+/// Build the shared aggregator state.
+fn build_app_state(
+    token_ids: Vec<String>,
+    output_path: PathBuf,
+    s3_bucket: String,
+    s3_prefix: String,
+    replication_factor: usize,
+    heartbeat_timeout: Duration,
+    delete_after_merge: bool,
+) -> AppState {
+    AppState {
         token_ids,
         collectors: Arc::new(RwLock::new(HashMap::new())),
         assignments: Arc::new(RwLock::new(HashMap::new())),
@@ -544,32 +621,1007 @@ pub async fn run(
         delete_after_merge,
         replication_factor,
         heartbeat_timeout,
-        tokens_per_collector,
-    };
+        tokens_per_collector: 100,
+    }
+}
 
-    // Spawn heartbeat monitor background task.
+/// Spawn the heartbeat monitor and S3 merge background tasks.
+async fn spawn_background_tasks(state: AppState, region: String) {
     let monitor_state = state.clone();
     tokio::spawn(async move {
         heartbeat_monitor(monitor_state).await;
     });
 
-    // Spawn S3 merge background task.
     let s3 = Arc::new(AwsS3Service::new(region).await);
     let merge_state = state.clone();
     tokio::spawn(async move {
         merge_task(merge_state, s3).await;
     });
+}
 
-    let app = Router::new()
+/// Build the axum router for the aggregator.
+fn build_app(state: AppState) -> Router {
+    Router::new()
         .route("/register", post(register_handler))
         .route("/heartbeat/:collector_id", post(heartbeat_handler))
         .route("/assignment/:collector_id", get(assignment_handler))
         .route("/notify", post(notify_handler))
         .layer(DefaultBodyLimit::max(50 * 1024 * 1024))
-        .with_state(state);
+        .with_state(state)
+}
 
-    info!(bind = %bind, "Aggregator listening");
-    let listener = tokio::net::TcpListener::bind(bind).await?;
-    axum::serve(listener, app).await?;
+/// Serve the axum app with a graceful shutdown signal.
+async fn serve(
+    app: Router,
+    listener: tokio::net::TcpListener,
+    shutdown: impl Future<Output = ()> + Send + 'static,
+) -> Result<()> {
+    axum::serve(listener, app).with_graceful_shutdown(shutdown).await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::aggregate_s3::InMemoryS3Service;
+    use std::time::Duration;
+    use tempfile::tempdir;
+
+    fn sample_market_json(id: &str, tokens: &[&str]) -> String {
+        serde_json::json!({
+            "id": id,
+            "condition_id": format!("cond-{}", id),
+            "question": "Will it rain?",
+            "slug": "rain",
+            "active": true,
+            "closed": false,
+            "archived": false,
+            "neg_risk": false,
+            "accepting_orders": true,
+            "enable_order_book": true,
+            "token_ids": tokens,
+        })
+        .to_string()
+    }
+
+    fn test_state(tokens: Vec<String>) -> AppState {
+        AppState {
+            token_ids: tokens,
+            collectors: Arc::new(RwLock::new(HashMap::new())),
+            assignments: Arc::new(RwLock::new(HashMap::new())),
+            market_replicas: Arc::new(RwLock::new(HashMap::new())),
+            pending_files: Arc::new(Mutex::new(Vec::new())),
+            processed_keys: Arc::new(RwLock::new(HashSet::new())),
+            output_path: PathBuf::from("/tmp/aggregator_test_output.jsonl"),
+            s3_bucket: "test-bucket".to_string(),
+            s3_prefix: "orderbook/".to_string(),
+            delete_after_merge: false,
+            replication_factor: 1,
+            heartbeat_timeout: Duration::from_secs(60),
+            tokens_per_collector: 2,
+        }
+    }
+
+    #[test]
+    fn test_load_markets_success() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("markets.jsonl");
+        std::fs::write(&path, format!("{}\n", sample_market_json("m1", &["t1", "t2"]))).unwrap();
+
+        let (markets, token_ids) = load_markets(&path).unwrap();
+        assert_eq!(markets.len(), 1);
+        assert_eq!(markets[0].id, "m1");
+        assert_eq!(token_ids, vec!["t1", "t2"]);
+    }
+
+    #[test]
+    fn test_load_markets_missing_file() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("missing.jsonl");
+        let err = load_markets(&path).unwrap_err();
+        assert!(err.to_string().contains("Failed to read markets file"));
+    }
+
+    #[test]
+    fn test_load_markets_invalid_json() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("markets.jsonl");
+        std::fs::write(&path, "not valid json\n").unwrap();
+        let err = load_markets(&path).unwrap_err();
+        assert!(err.to_string().contains("Failed to parse market line"));
+    }
+
+    #[test]
+    fn test_load_markets_skips_blank_lines() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("markets.jsonl");
+        let content = format!(
+            "\n\n{}\n\n",
+            sample_market_json("m1", &["t1"])
+        );
+        std::fs::write(&path, content).unwrap();
+        let (markets, token_ids) = load_markets(&path).unwrap();
+        assert_eq!(markets.len(), 1);
+        assert_eq!(token_ids, vec!["t1"]);
+    }
+
+    #[test]
+    fn test_allocate_tokens_empty_tokens() {
+        let map = allocate_tokens(&[], &["c1".to_string()], 1, 2);
+        assert!(map["c1"].is_empty());
+    }
+
+    #[test]
+    fn test_allocate_tokens_empty_collectors() {
+        let map = allocate_tokens(&["t1".to_string()], &[], 1, 2);
+        assert!(map.is_empty());
+    }
+
+    #[test]
+    fn test_allocate_tokens_single_token() {
+        let map = allocate_tokens(&["t1".to_string()], &["c1".to_string()], 1, 2);
+        assert_eq!(map["c1"], vec!["t1"]);
+    }
+
+    #[test]
+    fn test_allocate_tokens_multiple_chunks() {
+        let tokens: Vec<String> = (0..5).map(|i| format!("t{}", i)).collect();
+        let collectors = vec!["c0".to_string(), "c1".to_string()];
+        let map = allocate_tokens(&tokens, &collectors, 1, 2);
+        assert_eq!(map["c0"], vec!["t0", "t1", "t4"]);
+        assert_eq!(map["c1"], vec!["t2", "t3"]);
+    }
+
+    #[test]
+    fn test_allocate_tokens_replication_greater_than_collectors() {
+        let tokens = vec!["t1".to_string()];
+        let collectors = vec!["c1".to_string()];
+        let map = allocate_tokens(&tokens, &collectors, 3, 10);
+        assert_eq!(map["c1"], vec!["t1", "t1", "t1"]);
+    }
+
+    #[tokio::test]
+    async fn test_rebalance_filters_stale() {
+        let state = test_state(vec![
+            "t1".to_string(),
+            "t2".to_string(),
+            "t3".to_string(),
+            "t4".to_string(),
+        ]);
+        {
+            let mut collectors = state.collectors.write().await;
+            collectors.insert(
+                "c1".to_string(),
+                CollectorInfo { last_heartbeat: Instant::now() },
+            );
+            collectors.insert(
+                "c2".to_string(),
+                CollectorInfo {
+                    last_heartbeat: Instant::now() - Duration::from_secs(120),
+                },
+            );
+        }
+
+        rebalance(&state).await;
+
+        let assignments = state.assignments.read().await;
+        assert!(assignments.contains_key("c1"));
+        assert!(!assignments.contains_key("c2"));
+        assert!(!assignments["c1"].is_empty());
+
+        let replicas = state.market_replicas.read().await;
+        assert_eq!(replicas.len(), 4);
+    }
+
+    #[tokio::test]
+    async fn test_merge_object_valid_jsonl() {
+        let s3 = InMemoryS3Service::default();
+        s3.put_object(
+            "test-bucket",
+            "key.jsonl",
+            b"{\"a\":1}\n{\"b\":2}\n".to_vec(),
+        )
+        .await
+        .unwrap();
+
+        let dir = tempdir().unwrap();
+        let output = dir.path().join("out.jsonl");
+        let obj = S3Object {
+            key: "key.jsonl".to_string(),
+            etag: None,
+            size: 0,
+        };
+
+        let lines = merge_object(&s3, "test-bucket", &obj, &output).await.unwrap();
+        assert_eq!(lines, 2);
+
+        let content = tokio::fs::read_to_string(&output).await.unwrap();
+        assert!(content.contains("\"a\":1"));
+        assert!(content.contains("\"b\":2"));
+    }
+
+    #[tokio::test]
+    async fn test_merge_object_malformed_lines() {
+        let s3 = InMemoryS3Service::default();
+        s3.put_object(
+            "test-bucket",
+            "key.jsonl",
+            b"{\"a\":1}\nnot json\n{\"c\":3}\n".to_vec(),
+        )
+        .await
+        .unwrap();
+
+        let dir = tempdir().unwrap();
+        let output = dir.path().join("out.jsonl");
+        let obj = S3Object {
+            key: "key.jsonl".to_string(),
+            etag: None,
+            size: 0,
+        };
+
+        let lines = merge_object(&s3, "test-bucket", &obj, &output).await.unwrap();
+        assert_eq!(lines, 2);
+
+        let content = tokio::fs::read_to_string(&output).await.unwrap();
+        assert!(content.contains("\"a\":1"));
+        assert!(content.contains("\"c\":3"));
+        assert!(!content.contains("not json"));
+    }
+
+    #[tokio::test]
+    async fn test_merge_object_missing_object() {
+        let s3 = InMemoryS3Service::default();
+        let dir = tempdir().unwrap();
+        let output = dir.path().join("out.jsonl");
+        let obj = S3Object {
+            key: "missing.jsonl".to_string(),
+            etag: None,
+            size: 0,
+        };
+
+        assert!(merge_object(&s3, "test-bucket", &obj, &output).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_register_handler_with_id() {
+        let state = test_state(vec!["t1".to_string(), "t2".to_string()]);
+        let resp = register_handler(
+            State(state.clone()),
+            Json(RegisterRequest {
+                collector_id: Some("c1".to_string()),
+            }),
+        )
+        .await;
+
+        assert_eq!(resp.collector_id, "c1");
+        let collectors = state.collectors.read().await;
+        assert!(collectors.contains_key("c1"));
+        drop(collectors);
+        let assignments = state.assignments.read().await;
+        assert!(assignments.contains_key("c1"));
+        assert!(!assignments["c1"].is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_register_handler_without_id() {
+        let state = test_state(vec!["t1".to_string()]);
+        let resp = register_handler(
+            State(state.clone()),
+            Json(RegisterRequest { collector_id: None }),
+        )
+        .await;
+
+        assert!(!resp.collector_id.is_empty());
+        let collectors = state.collectors.read().await;
+        assert!(collectors.contains_key(&resp.collector_id));
+    }
+
+    #[tokio::test]
+    async fn test_heartbeat_handler_unknown() {
+        let state = test_state(vec![]);
+        let status = heartbeat_handler(
+            State(state),
+            axum::extract::Path("unknown".to_string()),
+        )
+        .await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn test_heartbeat_handler_known() {
+        let state = test_state(vec![]);
+        {
+            let mut collectors = state.collectors.write().await;
+            collectors.insert(
+                "c1".to_string(),
+                CollectorInfo { last_heartbeat: Instant::now() - Duration::from_secs(60) },
+            );
+        }
+        let status = heartbeat_handler(
+            State(state.clone()),
+            axum::extract::Path("c1".to_string()),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        let collectors = state.collectors.read().await;
+        let elapsed = Instant::now().duration_since(collectors["c1"].last_heartbeat);
+        assert!(elapsed < Duration::from_secs(1));
+    }
+
+    #[tokio::test]
+    async fn test_assignment_handler_unassigned() {
+        let state = test_state(vec!["t1".to_string()]);
+        let resp = assignment_handler(
+            State(state),
+            axum::extract::Path("nobody".to_string()),
+        )
+        .await;
+        assert!(resp.token_ids.is_empty());
+        assert_eq!(resp.chunk_size, 2);
+    }
+
+    #[tokio::test]
+    async fn test_notify_handler_adds_pending_and_skips_processed() {
+        let state = test_state(vec![]);
+        let resp = notify_handler(
+            State(state.clone()),
+            Json(NotifyRequest {
+                key: "k1.jsonl".to_string(),
+                collector_id: Some("c1".to_string()),
+            }),
+        )
+        .await;
+        assert!(resp.received);
+
+        {
+            let pending = state.pending_files.lock().await;
+            assert_eq!(pending.len(), 1);
+            assert_eq!(pending[0].key, "k1.jsonl");
+        }
+
+        state
+            .processed_keys
+            .write()
+            .await
+            .insert("k1.jsonl".to_string());
+
+        let resp2 = notify_handler(
+            State(state.clone()),
+            Json(NotifyRequest {
+                key: "k1.jsonl".to_string(),
+                collector_id: None,
+            }),
+        )
+        .await;
+        assert!(resp2.received);
+
+        let pending = state.pending_files.lock().await;
+        assert_eq!(pending.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_run_spawns_server() {
+        let dir = tempdir().unwrap();
+        let markets_path = dir.path().join("markets.jsonl");
+        let output_path = dir.path().join("out.jsonl");
+        std::fs::write(
+            &markets_path,
+            format!("{}\n", sample_market_json("m1", &["t1", "t2"])),
+        )
+        .unwrap();
+
+        let handle = tokio::spawn(async move {
+            let _ = run(
+                "127.0.0.1:19090",
+                output_path,
+                markets_path,
+                "test-bucket".to_string(),
+                "orderbook/".to_string(),
+                1,
+                Duration::from_secs(60),
+                false,
+                "us-east-1".to_string(),
+            )
+            .await;
+        });
+
+        tokio::time::sleep(Duration::from_millis(500)).await;
+
+        let client = reqwest::Client::new();
+        let resp = client
+            .post("http://127.0.0.1:19090/register")
+            .json(&serde_json::json!({ "collector_id": "test" }))
+            .send()
+            .await
+            .unwrap();
+        assert!(resp.status().is_success());
+
+        handle.abort();
+        let _ = handle.await;
+    }
+
+    #[tokio::test]
+    async fn test_heartbeat_monitor_removes_stale() {
+        let state = test_state(vec!["t1".to_string()]);
+        {
+            let mut collectors = state.collectors.write().await;
+            collectors.insert(
+                "c1".to_string(),
+                CollectorInfo { last_heartbeat: Instant::now() - Duration::from_secs(120) },
+            );
+        }
+
+        // Spawn the monitor and let it run for one tick.
+        let monitor_state = state.clone();
+        let handle = tokio::spawn(async move {
+            heartbeat_monitor(monitor_state).await;
+        });
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        handle.abort();
+        let _ = handle.await;
+
+        let collectors = state.collectors.read().await;
+        assert!(!collectors.contains_key("c1"));
+    }
+
+    #[tokio::test]
+    async fn test_merge_task_processes_pending() {
+        let dir = tempdir().unwrap();
+        let output_path = dir.path().join("out.jsonl");
+        let s3 = Arc::new(InMemoryS3Service::default());
+        s3.put_object(
+            "test-bucket",
+            "orderbook/k1.jsonl",
+            b"{\"a\":1}\n".to_vec(),
+        )
+        .await
+        .unwrap();
+
+        let state = AppState {
+            token_ids: vec![],
+            collectors: Arc::new(RwLock::new(HashMap::new())),
+            assignments: Arc::new(RwLock::new(HashMap::new())),
+            market_replicas: Arc::new(RwLock::new(HashMap::new())),
+            pending_files: Arc::new(Mutex::new(vec![S3Object {
+                key: "orderbook/k1.jsonl".to_string(),
+                etag: None,
+                size: 0,
+            }])),
+            processed_keys: Arc::new(RwLock::new(HashSet::new())),
+            output_path: output_path.clone(),
+            s3_bucket: "test-bucket".to_string(),
+            s3_prefix: "orderbook/".to_string(),
+            delete_after_merge: false,
+            replication_factor: 1,
+            heartbeat_timeout: Duration::from_secs(60),
+            tokens_per_collector: 2,
+        };
+
+        let task_state = state.clone();
+        let handle = tokio::spawn(async move {
+            merge_task(task_state, s3).await;
+        });
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        handle.abort();
+        let _ = handle.await;
+
+        let content = tokio::fs::read_to_string(&output_path).await.unwrap();
+        assert!(content.contains("\"a\":1"));
+    }
+
+    #[tokio::test]
+    async fn test_merge_task_deletes_after_merge() {
+        let dir = tempdir().unwrap();
+        let output_path = dir.path().join("out.jsonl");
+        let s3 = Arc::new(InMemoryS3Service::default());
+        s3.put_object(
+            "test-bucket",
+            "orderbook/k1.jsonl",
+            b"{\"a\":1}\n".to_vec(),
+        )
+        .await
+        .unwrap();
+
+        let state = AppState {
+            token_ids: vec![],
+            collectors: Arc::new(RwLock::new(HashMap::new())),
+            assignments: Arc::new(RwLock::new(HashMap::new())),
+            market_replicas: Arc::new(RwLock::new(HashMap::new())),
+            pending_files: Arc::new(Mutex::new(vec![S3Object {
+                key: "orderbook/k1.jsonl".to_string(),
+                etag: None,
+                size: 0,
+            }])),
+            processed_keys: Arc::new(RwLock::new(HashSet::new())),
+            output_path,
+            s3_bucket: "test-bucket".to_string(),
+            s3_prefix: "orderbook/".to_string(),
+            delete_after_merge: true,
+            replication_factor: 1,
+            heartbeat_timeout: Duration::from_secs(60),
+            tokens_per_collector: 2,
+        };
+
+        let task_state = state.clone();
+        let handle = tokio::spawn(async move {
+            merge_task(task_state, s3.clone()).await;
+        });
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        handle.abort();
+        let _ = handle.await;
+
+        let remaining = state.pending_files.lock().await;
+        assert!(remaining.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_heartbeat_monitor_keeps_healthy_collector() {
+        let state = test_state(vec!["t1".to_string()]);
+        {
+            let mut collectors = state.collectors.write().await;
+            collectors.insert(
+                "c1".to_string(),
+                CollectorInfo { last_heartbeat: Instant::now() },
+            );
+        }
+
+        let monitor_state = state.clone();
+        let handle = tokio::spawn(async move {
+            heartbeat_monitor(monitor_state).await;
+        });
+        tokio::time::sleep(Duration::from_millis(1500)).await;
+        handle.abort();
+        let _ = handle.await;
+
+        let collectors = state.collectors.read().await;
+        assert!(collectors.contains_key("c1"));
+    }
+
+    #[tokio::test]
+    async fn test_rebalance_no_healthy_collectors() {
+        let state = test_state(vec!["t1".to_string(), "t2".to_string()]);
+        {
+            let mut collectors = state.collectors.write().await;
+            collectors.insert(
+                "c1".to_string(),
+                CollectorInfo {
+                    last_heartbeat: Instant::now() - Duration::from_secs(120),
+                },
+            );
+        }
+
+        rebalance(&state).await;
+
+        let assignments = state.assignments.read().await;
+        assert!(assignments.is_empty());
+        let replicas = state.market_replicas.read().await;
+        assert!(replicas.is_empty());
+    }
+
+    /// S3 backend wrapper that can fail selected operations for coverage tests.
+    struct FailingS3Service {
+        pub inner: InMemoryS3Service,
+        fail_get: Vec<String>,
+        fail_list: bool,
+        fail_delete: Vec<String>,
+    }
+
+    impl FailingS3Service {
+        fn new(fail_get: Vec<String>, fail_list: bool, fail_delete: Vec<String>) -> Self {
+            Self {
+                inner: InMemoryS3Service::default(),
+                fail_get,
+                fail_list,
+                fail_delete,
+            }
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl S3Service for FailingS3Service {
+        async fn list_objects(&self, bucket: &str, prefix: &str) -> Result<Vec<S3Object>> {
+            if self.fail_list {
+                anyhow::bail!("list_objects failed");
+            }
+            self.inner.list_objects(bucket, prefix).await
+        }
+
+        async fn get_object(&self, bucket: &str, key: &str) -> Result<Vec<u8>> {
+            if self.fail_get.contains(&key.to_string()) {
+                anyhow::bail!("get_object failed for {}", key);
+            }
+            self.inner.get_object(bucket, key).await
+        }
+
+        async fn put_object(&self, bucket: &str, key: &str, body: Vec<u8>) -> Result<()> {
+            self.inner.put_object(bucket, key, body).await
+        }
+
+        async fn delete_object(&self, bucket: &str, key: &str) -> Result<()> {
+            if self.fail_delete.contains(&key.to_string()) {
+                anyhow::bail!("delete_object failed for {}", key);
+            }
+            self.inner.delete_object(bucket, key).await
+        }
+    }
+
+    #[tokio::test]
+    async fn test_merge_task_retries_failed_notified_object() {
+        let dir = tempdir().unwrap();
+        let output_path = dir.path().join("out.jsonl");
+        let s3 = Arc::new(FailingS3Service::new(
+            vec!["orderbook/k1.jsonl".to_string()],
+            false,
+            vec![],
+        ));
+        s3.inner
+            .put_object(
+                "test-bucket",
+                "orderbook/k1.jsonl",
+                b"{\"a\":1}\n".to_vec(),
+            )
+            .await
+            .unwrap();
+
+        let state = AppState {
+            token_ids: vec![],
+            collectors: Arc::new(RwLock::new(HashMap::new())),
+            assignments: Arc::new(RwLock::new(HashMap::new())),
+            market_replicas: Arc::new(RwLock::new(HashMap::new())),
+            pending_files: Arc::new(Mutex::new(vec![S3Object {
+                key: "orderbook/k1.jsonl".to_string(),
+                etag: None,
+                size: 0,
+            }])),
+            processed_keys: Arc::new(RwLock::new(HashSet::new())),
+            output_path,
+            s3_bucket: "test-bucket".to_string(),
+            s3_prefix: "orderbook/".to_string(),
+            delete_after_merge: false,
+            replication_factor: 1,
+            heartbeat_timeout: Duration::from_secs(60),
+            tokens_per_collector: 2,
+        };
+
+        let task_state = state.clone();
+        let handle = tokio::spawn(async move {
+            merge_task(task_state, s3).await;
+        });
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        handle.abort();
+        let _ = handle.await;
+
+        let pending = state.pending_files.lock().await;
+        assert_eq!(pending.len(), 1);
+        assert_eq!(pending[0].key, "orderbook/k1.jsonl");
+    }
+
+    #[tokio::test]
+    async fn test_merge_task_polled_object_merge_failure() {
+        let dir = tempdir().unwrap();
+        let output_path = dir.path().join("out.jsonl");
+        let s3 = Arc::new(FailingS3Service::new(
+            vec!["orderbook/k1.jsonl".to_string()],
+            false,
+            vec![],
+        ));
+        s3.inner
+            .put_object(
+                "test-bucket",
+                "orderbook/k1.jsonl",
+                b"{\"a\":1}\n".to_vec(),
+            )
+            .await
+            .unwrap();
+
+        let state = AppState {
+            token_ids: vec![],
+            collectors: Arc::new(RwLock::new(HashMap::new())),
+            assignments: Arc::new(RwLock::new(HashMap::new())),
+            market_replicas: Arc::new(RwLock::new(HashMap::new())),
+            pending_files: Arc::new(Mutex::new(Vec::new())),
+            processed_keys: Arc::new(RwLock::new(HashSet::new())),
+            output_path,
+            s3_bucket: "test-bucket".to_string(),
+            s3_prefix: "orderbook/".to_string(),
+            delete_after_merge: false,
+            replication_factor: 1,
+            heartbeat_timeout: Duration::from_secs(60),
+            tokens_per_collector: 2,
+        };
+
+        let task_state = state.clone();
+        let handle = tokio::spawn(async move {
+            merge_task(task_state, s3).await;
+        });
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        handle.abort();
+        let _ = handle.await;
+
+        let processed = state.processed_keys.read().await;
+        assert!(!processed.contains("orderbook/k1.jsonl"));
+    }
+
+    #[tokio::test]
+    async fn test_merge_task_delete_failure_keeps_object() {
+        let dir = tempdir().unwrap();
+        let output_path = dir.path().join("out.jsonl");
+        let s3 = Arc::new(FailingS3Service::new(
+            vec![],
+            false,
+            vec!["orderbook/k1.jsonl".to_string()],
+        ));
+        s3.inner
+            .put_object(
+                "test-bucket",
+                "orderbook/k1.jsonl",
+                b"{\"a\":1}\n".to_vec(),
+            )
+            .await
+            .unwrap();
+
+        let state = AppState {
+            token_ids: vec![],
+            collectors: Arc::new(RwLock::new(HashMap::new())),
+            assignments: Arc::new(RwLock::new(HashMap::new())),
+            market_replicas: Arc::new(RwLock::new(HashMap::new())),
+            pending_files: Arc::new(Mutex::new(vec![S3Object {
+                key: "orderbook/k1.jsonl".to_string(),
+                etag: None,
+                size: 0,
+            }])),
+            processed_keys: Arc::new(RwLock::new(HashSet::new())),
+            output_path,
+            s3_bucket: "test-bucket".to_string(),
+            s3_prefix: "orderbook/".to_string(),
+            delete_after_merge: true,
+            replication_factor: 1,
+            heartbeat_timeout: Duration::from_secs(60),
+            tokens_per_collector: 2,
+        };
+
+        let s3_for_task = Arc::clone(&s3);
+        let task_state = state.clone();
+        let handle = tokio::spawn(async move {
+            merge_task(task_state, s3_for_task).await;
+        });
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        handle.abort();
+        let _ = handle.await;
+
+        let processed = state.processed_keys.read().await;
+        assert!(processed.contains("orderbook/k1.jsonl"));
+        let remaining = s3.inner.list_objects("test-bucket", "orderbook/").await.unwrap();
+        assert_eq!(remaining.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_merge_object_skips_blank_lines() {
+        let s3 = InMemoryS3Service::default();
+        s3.put_object(
+            "test-bucket",
+            "key.jsonl",
+            b"{\"a\":1}\n\n\n{\"b\":2}\n".to_vec(),
+        )
+        .await
+        .unwrap();
+
+        let dir = tempdir().unwrap();
+        let output = dir.path().join("out.jsonl");
+        let obj = S3Object {
+            key: "key.jsonl".to_string(),
+            etag: None,
+            size: 0,
+        };
+
+        let lines = merge_object(&s3, "test-bucket", &obj, &output).await.unwrap();
+        assert_eq!(lines, 2);
+
+        let content = tokio::fs::read_to_string(&output).await.unwrap();
+        assert!(content.contains("\"a\":1"));
+        assert!(content.contains("\"b\":2"));
+    }
+
+    #[tokio::test]
+    async fn test_merge_object_open_error() {
+        let s3 = InMemoryS3Service::default();
+        s3.put_object(
+            "test-bucket",
+            "key.jsonl",
+            b"{\"a\":1}\n".to_vec(),
+        )
+        .await
+        .unwrap();
+
+        let dir = tempdir().unwrap();
+        let output = dir.path().to_path_buf(); // directory, cannot open as file
+        let obj = S3Object {
+            key: "key.jsonl".to_string(),
+            etag: None,
+            size: 0,
+        };
+
+        assert!(merge_object(&s3, "test-bucket", &obj, &output).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_run_with_shutdown_creates_parent_and_serves() {
+        let _ = tracing_subscriber::fmt().with_max_level(tracing::Level::INFO).try_init();
+        let dir = tempdir().unwrap();
+        let markets_path = dir.path().join("markets.jsonl");
+        let output_path = dir.path().join("nested").join("out.jsonl");
+        std::fs::write(
+            &markets_path,
+            format!("{}\n", sample_market_json("m1", &["t1", "t2"])),
+        )
+        .unwrap();
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        drop(listener);
+
+        let bind = format!("127.0.0.1:{}", port);
+
+        let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
+        let request_handle = tokio::spawn({
+            let bind = bind.clone();
+            async move {
+                tokio::time::sleep(Duration::from_millis(300)).await;
+                let client = reqwest::Client::new();
+                let resp = client
+                    .post(&format!("http://{}/register", bind))
+                    .json(&serde_json::json!({ "collector_id": "test" }))
+                    .send()
+                    .await
+                    .unwrap();
+                assert!(resp.status().is_success());
+                assert!(dir.path().join("nested").exists());
+                let _ = shutdown_tx.send(());
+            }
+        });
+
+        run_with_shutdown(
+            &bind,
+            output_path,
+            markets_path,
+            "test-bucket".to_string(),
+            "orderbook/".to_string(),
+            1,
+            Duration::from_secs(60),
+            false,
+            "us-east-1".to_string(),
+            async { shutdown_rx.await.ok(); },
+        )
+        .await
+        .unwrap();
+
+        request_handle.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_merge_task_list_objects_failure() {
+        let dir = tempdir().unwrap();
+        let output_path = dir.path().join("out.jsonl");
+        let s3 = Arc::new(FailingS3Service::new(vec![], true, vec![]));
+
+        let state = AppState {
+            token_ids: vec![],
+            collectors: Arc::new(RwLock::new(HashMap::new())),
+            assignments: Arc::new(RwLock::new(HashMap::new())),
+            market_replicas: Arc::new(RwLock::new(HashMap::new())),
+            pending_files: Arc::new(Mutex::new(Vec::new())),
+            processed_keys: Arc::new(RwLock::new(HashSet::new())),
+            output_path,
+            s3_bucket: "test-bucket".to_string(),
+            s3_prefix: "orderbook/".to_string(),
+            delete_after_merge: false,
+            replication_factor: 1,
+            heartbeat_timeout: Duration::from_secs(60),
+            tokens_per_collector: 2,
+        };
+
+        let task_state = state.clone();
+        let handle = tokio::spawn(async move {
+            merge_task(task_state, s3).await;
+        });
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        handle.abort();
+        let _ = handle.await;
+    }
+
+    #[tokio::test]
+    async fn test_build_app_state_returns_state() {
+        let state = build_app_state(
+            vec!["t1".to_string()],
+            PathBuf::from("/tmp/out.jsonl"),
+            "bucket".to_string(),
+            "prefix/".to_string(),
+            2,
+            Duration::from_secs(30),
+            true,
+        );
+        assert_eq!(state.token_ids, vec!["t1".to_string()]);
+        assert_eq!(state.s3_bucket, "bucket");
+        assert_eq!(state.replication_factor, 2);
+        assert!(state.delete_after_merge);
+    }
+
+    #[tokio::test]
+    async fn test_start_server_serves_and_shuts_down() {
+        let _ = tracing_subscriber::fmt().with_max_level(tracing::Level::INFO).try_init();
+        let dir = tempdir().unwrap();
+        let output_path = dir.path().join("out.jsonl");
+        let state = build_app_state(
+            vec!["t1".to_string()],
+            output_path,
+            "bucket".to_string(),
+            "prefix/".to_string(),
+            1,
+            Duration::from_secs(60),
+            false,
+        );
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        drop(listener);
+        let bind = format!("127.0.0.1:{}", port);
+
+        let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
+        let bind_for_request = bind.clone();
+        let request_handle = tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(200)).await;
+            let client = reqwest::Client::new();
+            let resp = client
+                .post(&format!("http://{}/register", bind_for_request))
+                .json(&serde_json::json!({ "collector_id": "test" }))
+                .send()
+                .await
+                .unwrap();
+            assert!(resp.status().is_success());
+            let _ = shutdown_tx.send(());
+        });
+
+        start_server(
+            &bind,
+            state,
+            "us-east-1".to_string(),
+            async { shutdown_rx.await.ok(); },
+        )
+        .await
+        .unwrap();
+
+        request_handle.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_run_with_shutdown_create_dir_all_error() {
+        let dir = tempdir().unwrap();
+        let markets_path = dir.path().join("markets.jsonl");
+        std::fs::write(
+            &markets_path,
+            format!("{}\n", sample_market_json("m1", &["t1"])),
+        )
+        .unwrap();
+
+        // Make the parent a file so create_dir_all fails.
+        let parent_as_file = dir.path().join("parent_file");
+        std::fs::write(&parent_as_file, "x").unwrap();
+        let output_path = parent_as_file.join("out.jsonl");
+
+        let err = run_with_shutdown(
+            "127.0.0.1:0",
+            output_path,
+            markets_path,
+            "test-bucket".to_string(),
+            "orderbook/".to_string(),
+            1,
+            Duration::from_secs(60),
+            false,
+            "us-east-1".to_string(),
+            std::future::pending(),
+        )
+        .await;
+
+        assert!(err.is_err());
+    }
 }
