@@ -1,0 +1,184 @@
+# Polymarket Docs Mirror
+
+- Source index: https://docs.polymarket.com/llms.txt
+- Source sitemap: https://docs.polymarket.com/sitemap.xml
+- Crawled at: 2026-06-18T23:37:59Z
+- Page count: 173
+- Scope: official `https://docs.polymarket.com/` Markdown pages listed in `llms.txt`.
+- Content policy: source Markdown is mirrored verbatim after this repository-local frontmatter.
+
+## Pages
+
+- [Negative Risk Markets](advanced/neg-risk.md) — Capital-efficient trading for multi-outcome events
+- [Authentication](api-reference/authentication.md) — How to authenticate requests to the CLOB API
+- [Create bridge addresses](api-reference/bridge/create-bridge-addresses.md)
+- [Create withdrawal addresses](api-reference/bridge/create-withdrawal-addresses.md)
+- [Get a quote](api-reference/bridge/get-a-quote.md)
+- [Get supported assets](api-reference/bridge/get-supported-assets.md)
+- [Get transaction status](api-reference/bridge/get-transaction-status.md)
+- [Get aggregated builder leaderboard](api-reference/builders/get-aggregated-builder-leaderboard.md)
+- [Get daily builder volume time-series](api-reference/builders/get-daily-builder-volume-time-series.md)
+- [Clients & SDKs](api-reference/clients-sdks.md) — Official open-source libraries for interacting with Polymarket
+- [Get combo markets](api-reference/combo-markets/get-combo-markets.md) — Returns active markets that can be used as combo legs, ordered by volume descending. This endpoint is public and does not require CLOB authentication.
+- [Get comments by comment id](api-reference/comments/get-comments-by-comment-id.md)
+- [Get comments by user address](api-reference/comments/get-comments-by-user-address.md)
+- [List comments](api-reference/comments/list-comments.md)
+- [Get closed positions for a user](api-reference/core/get-closed-positions-for-a-user.md)
+- [Get current positions for a user](api-reference/core/get-current-positions-for-a-user.md)
+- [Get positions for a market](api-reference/core/get-positions-for-a-market.md)
+- [Get top holders for markets](api-reference/core/get-top-holders-for-markets.md)
+- [Get total value of a user's positions](api-reference/core/get-total-value-of-a-users-positions.md)
+- [Get trader leaderboard rankings](api-reference/core/get-trader-leaderboard-rankings.md)
+- [Get trades for a user or markets](api-reference/core/get-trades-for-a-user-or-markets.md)
+- [Get user activity](api-reference/core/get-user-activity.md)
+- [Get user combo activity](api-reference/core/get-user-combo-activity.md) — Combo lifecycle and redeem events (split / merge / convert / compress / wrap / unwrap / redeem) for a user, with per-leg breakdown. The combo counterpart to /activity trade rows. Also available at /v1/data/user/{address}/activity/combos (address from the path).
+- [Get user combo positions](api-reference/core/get-user-combo-positions.md) — Combinatorial (multi-market) positions held by a user, with per-leg breakdown. Also available at /v1/data/user/{address}/positions/combos (address from the path).
+- [Get midpoint price](api-reference/data/get-midpoint-price.md) — Retrieves the midpoint price for a specific token ID. The midpoint is calculated as the average of the best bid and best ask prices.
+- [Get server time](api-reference/data/get-server-time.md) — Returns the current Unix timestamp of the server. This can be used to synchronize client time with server time.
+- [Get event by id](api-reference/events/get-event-by-id.md)
+- [Get event by slug](api-reference/events/get-event-by-slug.md)
+- [Get event tags](api-reference/events/get-event-tags.md)
+- [List events](api-reference/events/list-events.md)
+- [List events (keyset pagination)](api-reference/events/list-events-keyset-pagination.md) — Returns events using cursor-based (keyset) pagination for stable, efficient paging through large result sets. Use `next_cursor` from each response as `after_cursor` in the next request. The `offset` parameter is explicitly rejected; use `after_cursor` instead.
+- [Geographic Restrictions](api-reference/geoblock.md) — Check geographic restrictions before placing orders on the Polymarket API
+- [Introduction](api-reference/introduction.md) — Overview of the Polymarket APIs
+- [Cancel a quote](api-reference/maker/cancel-a-quote.md) — Cancel an active maker quote before it is selected. Requires CLOB L2 authentication for the maker role. `signer_address` and `maker_address` must match the authenticated identity.
+- [Confirm or decline last look](api-reference/maker/confirm-or-decline-last-look.md) — Respond to a last-look confirmation request for a selected quote. Requires CLOB L2 authentication for the maker role. `decision` must be `CONFIRM` or `DECLINE`.
+- [Submit a quote](api-reference/maker/submit-a-quote.md) — Submit a signed maker quote for an active RFQ. Requires CLOB L2 authentication for the maker role.
+- [Get fee rate](api-reference/market-data/get-fee-rate.md) — Retrieves the base fee rate for a specific token ID. The fee rate can be provided either as a query parameter or as a path parameter.
+- [Get fee rate by path parameter](api-reference/market-data/get-fee-rate-by-path-parameter.md) — Retrieves the base fee rate for a specific token ID using the token ID as a path parameter.
+- [Get last trade price](api-reference/market-data/get-last-trade-price.md) — Retrieves the last trade price and side for a specific token ID. Returns default values of "0.5" for price and empty string for side if no trades found.
+- [Get last trade prices (query parameters)](api-reference/market-data/get-last-trade-prices-query-parameters.md) — Retrieves last trade prices for multiple token IDs using query parameters. Maximum 500 token IDs can be requested per call.
+- [Get last trade prices (request body)](api-reference/market-data/get-last-trade-prices-request-body.md) — Retrieves last trade prices for multiple token IDs using a request body. Maximum 500 token IDs can be requested per call.
+- [Get market price](api-reference/market-data/get-market-price.md) — Retrieves the best market price for a specific token ID and side (bid or ask). Returns the best bid price for BUY side or best ask price for SELL side.
+- [Get market prices (query parameters)](api-reference/market-data/get-market-prices-query-parameters.md) — Retrieves market prices for multiple token IDs and sides using query parameters.
+- [Get market prices (request body)](api-reference/market-data/get-market-prices-request-body.md) — Retrieves market prices for multiple token IDs and sides using a request body. Each request must include both token_id and side.
+- [Get midpoint prices (query parameters)](api-reference/market-data/get-midpoint-prices-query-parameters.md) — Retrieves midpoint prices for multiple token IDs using query parameters. The midpoint is calculated as the average of the best bid and best ask prices.
+- [Get midpoint prices (request body)](api-reference/market-data/get-midpoint-prices-request-body.md) — Retrieves midpoint prices for multiple token IDs using a request body. The midpoint is calculated as the average of the best bid and best ask prices.
+- [Get order book](api-reference/market-data/get-order-book.md) — Retrieves the order book summary for a specific token ID. Includes bids, asks, market details, and last trade price.
+- [Get order books (request body)](api-reference/market-data/get-order-books-request-body.md) — Retrieves order book summaries for multiple token IDs using a request body.
+- [Get spread](api-reference/market-data/get-spread.md) — Retrieves the spread for a specific token ID. The spread is the difference between the best ask and best bid prices.
+- [Get spreads](api-reference/market-data/get-spreads.md) — Retrieves spreads for multiple token IDs. The spread is the difference between the best ask and best bid prices.
+- [Get tick size](api-reference/market-data/get-tick-size.md) — Retrieves the minimum tick size (price increment) for a specific token ID. The tick size can be provided either as a query parameter or as a path parameter.
+- [Get tick size by path parameter](api-reference/market-data/get-tick-size-by-path-parameter.md) — Retrieves the minimum tick size (price increment) for a specific token ID using the token ID as a path parameter.
+- [Get batch prices history](api-reference/markets/get-batch-prices-history.md) — Retrieve historical price data for multiple markets in a single request.
+- [Get CLOB market info](api-reference/markets/get-clob-market-info.md) — Returns all CLOB-level parameters for a market in a single call — tokens, tick size, base fees, rewards, RFQ status, and fee details.
+- [Get market by id](api-reference/markets/get-market-by-id.md)
+- [Get market by slug](api-reference/markets/get-market-by-slug.md)
+- [Get market by token](api-reference/markets/get-market-by-token.md) — Returns the parent market for a given token ID. Useful when you have a token ID and need to resolve its parent market without knowing the condition ID in advance.
+- [Get market tags by id](api-reference/markets/get-market-tags-by-id.md)
+- [Get prices history](api-reference/markets/get-prices-history.md) — Retrieve historical price data for a market.
+- [Get sampling markets](api-reference/markets/get-sampling-markets.md)
+- [Get sampling simplified markets](api-reference/markets/get-sampling-simplified-markets.md)
+- [Get simplified markets](api-reference/markets/get-simplified-markets.md)
+- [List markets](api-reference/markets/list-markets.md)
+- [List markets (keyset pagination)](api-reference/markets/list-markets-keyset-pagination.md) — Returns markets using cursor-based (keyset) pagination for stable, efficient paging through large result sets. Use `next_cursor` from each response as `after_cursor` in the next request. The `offset` parameter is explicitly rejected; use `after_cursor` instead.
+- [Download an accounting snapshot (ZIP of CSVs)](api-reference/misc/download-an-accounting-snapshot-zip-of-csvs.md)
+- [Get live volume for an event](api-reference/misc/get-live-volume-for-an-event.md)
+- [Get open interest](api-reference/misc/get-open-interest.md)
+- [Get total markets a user has traded](api-reference/misc/get-total-markets-a-user-has-traded.md)
+- [Get public profile by wallet address](api-reference/profiles/get-public-profile-by-wallet-address.md)
+- [Rate Limits](api-reference/rate-limits.md) — API rate limits for all Polymarket endpoints
+- [Get current rebated fees for a maker](api-reference/rebates/get-current-rebated-fees-for-a-maker.md) — Returns the current rebated fees for a maker address on a given date.
+- [Get all relayer API keys](api-reference/relayer-api-keys/get-all-relayer-api-keys.md) — Returns all relayer API keys for the authenticated address. Auth allowed: Gamma auth or Relayer API key auth (`RELAYER_API_KEY` + `RELAYER_API_KEY_ADDRESS`).
+- [Check if a wallet is deployed](api-reference/relayer/check-if-a-wallet-is-deployed.md) — Returns whether the wallet at the given address is deployed onchain.
+- [Get a transaction by ID](api-reference/relayer/get-a-transaction-by-id.md) — Gets a transaction submitted to the Relayer. Takes in a required transaction ID as a query parameter.
+- [Get current nonce for a user](api-reference/relayer/get-current-nonce-for-a-user.md) — Gets the current Proxy or Safe nonce for a user. Takes in the user's signer address and the type of nonce to retrieve.
+- [Get recent transactions for a user](api-reference/relayer/get-recent-transactions-for-a-user.md) — Gets the most recent transactions submitted to the Relayer, owned by a specific user. Authenticated using Builder API Keys or Relayer API Keys.
+- [Get relayer address and nonce](api-reference/relayer/get-relayer-address-and-nonce.md) — Fetches the relayer address and nonce for a specific user. Takes in the user's signer address and the type of nonce to retrieve.
+- [Submit a transaction](api-reference/relayer/submit-a-transaction.md) — Submit a transaction request to the Relayer. Authenticated using Builder API Keys or Relayer API Keys.
+- [Get current active rewards configurations](api-reference/rewards/get-current-active-rewards-configurations.md) — Returns all current active rewards configurations grouped by market.
+- [Get earnings for user by date](api-reference/rewards/get-earnings-for-user-by-date.md) — Returns an array of user earnings per market for a provided day.
+- [Get multiple markets with rewards](api-reference/rewards/get-multiple-markets-with-rewards.md) — Returns a list of active markets with their reward configurations. Supports text search, tag filtering, numeric filters, and sorting.
+- [Get raw rewards for a specific market](api-reference/rewards/get-raw-rewards-for-a-specific-market.md) — Returns an array of present and future rewards configured on a market.
+- [Get reward percentages for user](api-reference/rewards/get-reward-percentages-for-user.md) — Returns the real-time percentages of rewards that a user is earning per market.
+- [Get total earnings for user by date](api-reference/rewards/get-total-earnings-for-user-by-date.md) — Returns the summed total rewards earnings for a user on a provided day, grouped by asset address.
+- [Get user earnings and markets configuration](api-reference/rewards/get-user-earnings-and-markets-configuration.md) — Returns an array of current rewards including user earnings and live percentages per market for a provided day.
+- [Search markets, events, and profiles](api-reference/search/search-markets-events-and-profiles.md)
+- [Get series by id](api-reference/series/get-series-by-id.md)
+- [List series](api-reference/series/list-series.md)
+- [Get sports metadata information](api-reference/sports/get-sports-metadata-information.md)
+- [Get valid sports market types](api-reference/sports/get-valid-sports-market-types.md)
+- [List teams](api-reference/sports/list-teams.md)
+- [Get related tags (relationships) by tag id](api-reference/tags/get-related-tags-relationships-by-tag-id.md)
+- [Get related tags (relationships) by tag slug](api-reference/tags/get-related-tags-relationships-by-tag-slug.md)
+- [Get tag by id](api-reference/tags/get-tag-by-id.md)
+- [Get tag by slug](api-reference/tags/get-tag-by-slug.md)
+- [Get tags related to a tag id](api-reference/tags/get-tags-related-to-a-tag-id.md)
+- [Get tags related to a tag slug](api-reference/tags/get-tags-related-to-a-tag-slug.md)
+- [List tags](api-reference/tags/list-tags.md)
+- [Cancel all orders](api-reference/trade/cancel-all-orders.md) — Cancels all open orders for the authenticated user. Works even in cancel-only mode.
+- [Cancel multiple orders](api-reference/trade/cancel-multiple-orders.md) — Cancels multiple orders by their IDs. Maximum 1000 orders per request. Duplicate order IDs in the request are automatically ignored. Works even in cancel-only mode.
+- [Cancel orders for a market](api-reference/trade/cancel-orders-for-a-market.md) — Cancels all open orders for the authenticated user in a specific market (condition) and asset. Works even in cancel-only mode.
+- [Cancel single order](api-reference/trade/cancel-single-order.md) — Cancels a single order by its ID. Works even in cancel-only mode.
+- [Get builder trades](api-reference/trade/get-builder-trades.md) — Retrieves trades attributed to a builder code.
+- [Get order scoring status](api-reference/trade/get-order-scoring-status.md) — Checks if a specific order is currently scoring for rewards.
+- [Get single order by ID](api-reference/trade/get-single-order-by-id.md) — Retrieves a specific order by its ID (order hash) for the authenticated user. Builder-authenticated clients can also use this endpoint to retrieve orders attributed to their builder account.
+- [Get trades](api-reference/trade/get-trades.md) — Retrieves trades for the authenticated user. Returns paginated results. Requires readonly or level 2 API key authentication.
+- [Get user orders](api-reference/trade/get-user-orders.md) — Retrieves open orders for the authenticated user. Returns paginated results. Builder-authenticated clients can also use this endpoint to retrieve orders attributed to their builder account.
+- [Post a new order](api-reference/trade/post-a-new-order.md) — Creates a new order in the order book
+- [Post multiple orders](api-reference/trade/post-multiple-orders.md) — Creates multiple new orders in the order book. Orders are processed in parallel. Maximum 15 orders per request.
+- [Send heartbeat](api-reference/trade/send-heartbeat.md) — Sends a heartbeat signal to maintain active session status. If heartbeats are not sent regularly, all open orders for the user will be automatically canceled. This is useful for automated trading systems that need to ensure orders are canceled if the system becomes unresponsive.
+- [Market Channel](api-reference/wss/market.md) — Public WebSocket for real-time orderbook, price, and market lifecycle updates.
+- [Quoter Gateway](api-reference/wss/rfq.md) — Authenticated WebSocket for combinatorial RFQ quoters — receive requests, submit quotes, confirm last look, and track execution.
+- [Sports Channel](api-reference/wss/sports.md) — Public WebSocket for real-time sports match results.
+- [User Channel](api-reference/wss/user.md) — Authenticated WebSocket for real-time order and trade updates.
+- [Builder Code](builders/api-keys.md) — Your builder code for order attribution
+- [Builder Fees](builders/fees.md) — How builders earn fees on orders routed through their applications, and how to integrate.
+- [Builder Program](builders/overview.md) — Build applications that route orders through Polymarket
+- [Tiers](builders/tiers.md) — Rate limits, rewards, and how to upgrade
+- [Markets & Events](concepts/markets-events.md) — Understanding the fundamental building blocks of Polymarket
+- [Order Lifecycle](concepts/order-lifecycle.md) — Understanding how orders flow from creation to settlement
+- [Positions & Tokens](concepts/positions-tokens.md) — Understanding outcome tokens and how positions work on Polymarket
+- [Prices & Orderbook](concepts/prices-orderbook.md) — How prices work and how the order book enables peer-to-peer trading
+- [Polymarket USD](concepts/pusd.md) — pUSD — the collateral token used for all trading on Polymarket
+- [Resolution](concepts/resolution.md) — How markets are resolved and winning positions redeemed
+- [Overview](dev-tooling.md) — Learn about Polymarket's developer tooling roadmap.
+- [Python SDK](dev-tooling/python.md) — Build with the unified Polymarket Python SDK.
+- [TypeScript SDK](dev-tooling/typescript.md) — Build with the unified Polymarket TypeScript SDK.
+- [Overview](_root/index.md) — Build on the world's largest prediction market. Trade, integrate, and access real-time market data with the Polymarket API.
+- [Fetching Markets](market-data/fetching-markets.md) — Three strategies for discovering and querying markets
+- [Overview](market-data/overview.md) — Fetch market data with no authentication required
+- [Market Channel](market-data/websocket/market-channel.md) — Real-time orderbook, price, and trade data
+- [Overview](market-data/websocket/overview.md) — Real-time market data and trading updates via WebSocket
+- [Real-Time Data Socket](market-data/websocket/rtds.md) — Stream comments, crypto prices, and equity prices via WebSocket
+- [Sports WebSocket](market-data/websocket/sports.md) — Live sports scores and game state
+- [User Channel](market-data/websocket/user-channel.md) — Authenticated order and trade updates
+- [Combos](market-makers/combos.md) — Build a market maker integration for pricing and executing Combos
+- [Getting Started](market-makers/getting-started.md) — One-time setup for market making on Polymarket
+- [Inventory Management](market-makers/inventory.md) — Managing outcome token inventory for market making
+- [Liquidity Rewards](market-makers/liquidity-rewards.md) — Earn rewards for providing liquidity on Polymarket
+- [Maker Rebates Program](market-makers/maker-rebates.md) — Earn daily pUSD rebates by providing liquidity on Polymarket
+- [Overview](market-makers/overview.md) — Market making on Polymarket
+- [Trading](market-makers/trading.md) — Order entry, management, and best practices for market makers
+- [Polymarket 101](polymarket-101.md) — An intro to Polymarket - the world's largest prediction market
+- [Quickstart](quickstart.md) — Fetch a market and place your first order
+- [Data Resources](resources/blockchain-data.md) — Access Polymarket on-chain activity for data & analytics
+- [Contracts](resources/contracts.md) — All Polymarket smart contract addresses, audits, and security resources
+- [Error Codes](resources/error-codes.md) — Complete reference for CLOB API error responses
+- [Referral Program](resources/referral-program.md) — Refer traders to Polymarket and earn daily pUSD rewards
+- [Deposit](trading/bridge/deposit.md) — Bridge assets from any supported chain to fund your Polymarket account
+- [Quote](trading/bridge/quote.md) — Preview fees and estimated output for deposits and withdrawals
+- [Deposit Status](trading/bridge/status.md) — Track the progress of your bridge deposits
+- [Supported Assets](trading/bridge/supported-assets.md) — Chains and tokens supported for deposits to Polymarket
+- [Withdraw](trading/bridge/withdraw.md) — Bridge pUSD from Polymarket to any supported chain
+- [Builder Methods](trading/clients/builder.md) — Methods for querying orders and trades attributed to your builder code.
+- [L1 Methods](trading/clients/l1.md) — These methods require a wallet signer (private key) but do not require user API credentials. Use these for initial setup.
+- [L2 Methods](trading/clients/l2.md) — These methods require user API credentials (L2 headers). Use these for placing trades and managing your positions.
+- [Public Methods](trading/clients/public.md) — These methods can be called without a signer or user credentials. Use these for reading market data, prices, and order books.
+- [Merge Tokens](trading/ctf/merge.md) — Convert outcome token pairs back to pUSD
+- [Conditional Token Framework](trading/ctf/overview.md) — Onchain token mechanics powering Polymarket positions
+- [Redeem Tokens](trading/ctf/redeem.md) — Exchange winning tokens for pUSD after market resolution
+- [Split Tokens](trading/ctf/split.md) — Convert pUSD into outcome token pairs
+- [Deposit Wallets](trading/deposit-wallets.md) — Create deposit wallets, execute wallet actions, and place POLY_1271 orders
+- [Fees](trading/fees.md) — Understanding trading fees on Polymarket
+- [Gasless Transactions](trading/gasless.md) — Execute onchain operations without paying gas fees
+- [Matching Engine Restarts](trading/matching-engine.md) — Maintenance windows, restart handling, and post-restart post-only mode
+- [Orderbook](trading/orderbook.md) — Reading the orderbook, prices, spreads, and midpoints
+- [Order Attribution](trading/orders/attribution.md) — Attribute orders to your builder code for volume credit and fee rewards
+- [Cancel Order](trading/orders/cancel.md) — Cancel single, multiple, or all open orders
+- [Create Order](trading/orders/create.md) — Build, sign, and submit orders
+- [Overview](trading/orders/overview.md) — Order types, tick sizes, and querying orders
+- [Overview](trading/overview.md) — Trading on the Polymarket CLOB
+- [Quickstart](trading/quickstart.md) — Place your first order on Polymarket
+- [Taker Rebate Program](trading/taker-rebates.md) — Climb the tiers and earn daily pUSD rebates as you trade
