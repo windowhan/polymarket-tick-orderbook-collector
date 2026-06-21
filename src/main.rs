@@ -32,7 +32,7 @@ pub enum Commands {
         /// Path to markets.jsonl. Required in static mode; optional when
         /// --aggregator-url is provided.
         #[arg(long, default_value = "data/markets/markets.jsonl")]
-        markets_path: Option<PathBuf>,
+        markets_path: Option<PathBuf>, // dynamic하게 얻어올수있는지 체크.
         /// Local directory for rotated orderbook files.
         #[arg(long, default_value = "data/orderbook")]
         output_dir: PathBuf,
