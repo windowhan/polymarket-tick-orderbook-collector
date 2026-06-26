@@ -1452,7 +1452,7 @@ mod tests {
 
         let client = reqwest::Client::new();
         let resp = client
-            .get(&format!("http://127.0.0.1:{}/api/markets", port))
+            .get(format!("http://127.0.0.1:{}/api/markets", port))
             .send()
             .await
             .unwrap();

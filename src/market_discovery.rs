@@ -16,7 +16,7 @@ static DEFAULT_HTTP_CLIENT: Mutex<Option<Arc<dyn HttpClient>>> = Mutex::new(None
 /// Serialize tests that change the process current working directory so they
 /// do not interfere with other tests that rely on `std::env::current_dir()`.
 #[cfg(test)]
-static CWD_LOCK: Mutex<()> = Mutex::new(());
+static CWD_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 /// Return the default HTTP client for the current compilation mode.
 ///
@@ -653,7 +653,7 @@ mod tests {
 
     #[tokio::test(flavor = "current_thread")]
     async fn test_discover_and_save_wrapper() {
-        let _cwd_guard = CWD_LOCK.lock().unwrap();
+        let _cwd_guard = CWD_LOCK.lock().await;
 
         let subscriber = tracing_subscriber::fmt::Subscriber::default();
         let _guard =

@@ -1469,7 +1469,7 @@ mod tests {
                 tokio::time::sleep(Duration::from_millis(300)).await;
                 let client = reqwest::Client::new();
                 let resp = client
-                    .post(&format!("http://{}/register", bind))
+                    .post(format!("http://{}/register", bind))
                     .json(&serde_json::json!({ "collector_id": "test" }))
                     .send()
                     .await
@@ -1572,7 +1572,7 @@ mod tests {
             tokio::time::sleep(Duration::from_millis(200)).await;
             let client = reqwest::Client::new();
             let resp = client
-                .post(&format!("http://{}/register", bind_for_request))
+                .post(format!("http://{}/register", bind_for_request))
                 .json(&serde_json::json!({ "collector_id": "test" }))
                 .send()
                 .await

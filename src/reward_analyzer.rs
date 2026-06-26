@@ -92,6 +92,55 @@ pub fn analyze_rewards(path: &Path) -> Result<Vec<RewardBucket>> {
     Ok(buckets)
 }
 
+pub fn print_reward_analysis(buckets: &[RewardBucket]) {
+    println!(
+        "{:<20} {:>8} {:>14} {:>14} {:>14} {:>14} {:>14} {:>12} {:>14}",
+        "Bucket",
+        "Markets",
+        "DailyReward",
+        "AvgLiquidity",
+        "AvgVol24h",
+        "AvgVolume",
+        "AvgMaxSpread",
+        "Tokens",
+        "AvgCompetitive"
+    );
+    println!("{}", "-".repeat(136));
+    let total_markets: usize = buckets.iter().map(|b| b.count).sum();
+    for b in buckets {
+        if b.count == 0 {
+            continue;
+        }
+        let avg_liquidity = b.total_liquidity / b.count as f64;
+        let avg_vol24h = b.total_volume_24h / b.count as f64;
+        let avg_volume = b.total_volume / b.count as f64;
+        let avg_max_spread = if b.max_spread_count > 0 {
+            b.total_max_spread / b.max_spread_count as f64
+        } else {
+            0.0
+        };
+        let avg_competitive = if b.competitive_count > 0 {
+            b.total_competitive / b.competitive_count as f64
+        } else {
+            0.0
+        };
+        println!(
+            "{:<20} {:>8} {:>14.2} {:>14.2} {:>14.2} {:>14.2} {:>14.2} {:>12} {:>14.4}",
+            b.label,
+            b.count,
+            b.total_daily_reward,
+            avg_liquidity,
+            avg_vol24h,
+            avg_volume,
+            avg_max_spread,
+            b.token_count,
+            avg_competitive
+        );
+    }
+    println!("{}", "-".repeat(136));
+    println!("Total markets: {}", total_markets);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -216,53 +265,4 @@ mod tests {
         // Just ensure it doesn't panic.
         print_reward_analysis(&buckets);
     }
-}
-
-pub fn print_reward_analysis(buckets: &[RewardBucket]) {
-    println!(
-        "{:<20} {:>8} {:>14} {:>14} {:>14} {:>14} {:>14} {:>12} {:>14}",
-        "Bucket",
-        "Markets",
-        "DailyReward",
-        "AvgLiquidity",
-        "AvgVol24h",
-        "AvgVolume",
-        "AvgMaxSpread",
-        "Tokens",
-        "AvgCompetitive"
-    );
-    println!("{}", "-".repeat(136));
-    let total_markets: usize = buckets.iter().map(|b| b.count).sum();
-    for b in buckets {
-        if b.count == 0 {
-            continue;
-        }
-        let avg_liquidity = b.total_liquidity / b.count as f64;
-        let avg_vol24h = b.total_volume_24h / b.count as f64;
-        let avg_volume = b.total_volume / b.count as f64;
-        let avg_max_spread = if b.max_spread_count > 0 {
-            b.total_max_spread / b.max_spread_count as f64
-        } else {
-            0.0
-        };
-        let avg_competitive = if b.competitive_count > 0 {
-            b.total_competitive / b.competitive_count as f64
-        } else {
-            0.0
-        };
-        println!(
-            "{:<20} {:>8} {:>14.2} {:>14.2} {:>14.2} {:>14.2} {:>14.2} {:>12} {:>14.4}",
-            b.label,
-            b.count,
-            b.total_daily_reward,
-            avg_liquidity,
-            avg_vol24h,
-            avg_volume,
-            avg_max_spread,
-            b.token_count,
-            avg_competitive
-        );
-    }
-    println!("{}", "-".repeat(136));
-    println!("Total markets: {}", total_markets);
 }

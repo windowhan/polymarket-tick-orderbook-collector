@@ -183,7 +183,6 @@ mod test_helpers {
     }
 }
 
-
 /// Dispatch a single CLI command to its handler.
 pub async fn run_command(command: Commands) -> Result<()> {
     match command {
@@ -212,20 +211,24 @@ pub async fn run_command(command: Commands) -> Result<()> {
             duration_secs,
             limit_tokens,
         } => {
+            if aggregator_url.is_none() && markets_path.is_none() {
+                anyhow::bail!("Either --markets-path or --aggregator-url must be provided");
+            }
+
             // In orchestrated mode, token IDs come from the aggregator.
             // In static mode, they come from the markets file.
             let token_ids = if let Some(_url) = &aggregator_url {
                 // Orchestrated mode: token IDs will be fetched from aggregator at runtime.
                 Vec::new()
             } else {
-                let path = markets_path
-                    .clone()
-                    .unwrap_or_else(|| PathBuf::from("data/markets/markets.jsonl"));
+                let Some(path) = markets_path.as_ref() else {
+                    anyhow::bail!("Either --markets-path or --aggregator-url must be provided");
+                };
                 if !path.exists() {
                     anyhow::bail!("Markets file not found: {}", path.display());
                 }
 
-                let content = tokio::fs::read_to_string(&path).await?;
+                let content = tokio::fs::read_to_string(path).await?;
                 let mut ids = Vec::new();
                 for line in content.lines() {
                     if let Ok(market) =
@@ -244,10 +247,6 @@ pub async fn run_command(command: Commands) -> Result<()> {
                 }
                 ids
             };
-
-            if aggregator_url.is_none() && markets_path.is_none() {
-                anyhow::bail!("Either --markets-path or --aggregator-url must be provided");
-            }
 
             info!(
                 token_count = token_ids.len(),
@@ -338,12 +337,11 @@ pub async fn run_command(command: Commands) -> Result<()> {
             let client = default_http_client();
 
             for asset in assets {
-                let trades =
-                    polymarket_collector::trade_fetcher::backfill_trades_for_asset(
-                        client.as_ref(),
-                        &asset,
-                    )
-                    .await?;
+                let trades = polymarket_collector::trade_fetcher::backfill_trades_for_asset(
+                    client.as_ref(),
+                    &asset,
+                )
+                .await?;
                 if !trades.is_empty() {
                     let path = output_dir.join(format!("{}.jsonl", asset));
                     std::fs::create_dir_all(&output_dir)?;
@@ -384,7 +382,11 @@ pub async fn run_command(command: Commands) -> Result<()> {
             polymarket_collector::reward_analyzer::print_reward_analysis(&buckets);
         }
 
-        Commands::Viewer { input_path, bind, rpc_url } => {
+        Commands::Viewer {
+            input_path,
+            bind,
+            rpc_url,
+        } => {
             if !input_path.exists() {
                 anyhow::bail!("Input file not found: {}", input_path.display());
             }
@@ -411,8 +413,34 @@ mod tests {
     use tokio::time::{timeout, Duration};
 
     /// Serializes main::tests so the shared in-memory HTTP client and data dir
-    /// are not mutated by concurrent tests.
-    static TEST_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    /// are not mutated by concurrent async tests.
+    static TEST_MUTEX: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+    /// Locks shared CLI test state with an async-aware mutex.
+    ///
+    /// # Detailed Description
+    /// The `main` module tests intentionally share test-only global overrides for
+    /// the HTTP client and data directory. Holding a standard mutex across
+    /// `await` points creates misleading lint failures and can poison later tests
+    /// after one assertion panic. Tokio's mutex is designed for async test
+    /// serialization and does not poison, so later tests keep reporting their own
+    /// result instead of cascading a `PoisonError`.
+    ///
+    /// # Returns
+    /// A mutex guard that serializes access to shared test globals for the
+    /// duration of a test.
+    ///
+    /// # Example — Input / Output
+    /// ```rust,ignore
+    /// let _lock = lock_test_state().await;
+    /// // Shared test-only HTTP client and data-dir overrides are now isolated.
+    /// ```
+    ///
+    /// # Related
+    /// - `setup` resets the shared test HTTP client and data directory.
+    async fn lock_test_state() -> tokio::sync::MutexGuard<'static, ()> {
+        TEST_MUTEX.lock().await
+    }
 
     fn setup() -> (tempfile::TempDir, Arc<InMemoryHttpClient>) {
         let dir = tempdir().unwrap();
@@ -441,7 +469,12 @@ mod tests {
 
     fn write_markets(path: &std::path::Path, token_ids: Vec<String>) {
         let mut file = std::fs::File::create(path).unwrap();
-        writeln!(file, "{}", serde_json::to_string(&market_json(token_ids)).unwrap()).unwrap();
+        writeln!(
+            file,
+            "{}",
+            serde_json::to_string(&market_json(token_ids)).unwrap()
+        )
+        .unwrap();
     }
 
     fn reward_market(daily_rate: f64) -> serde_json::Value {
@@ -473,7 +506,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_discover_command_writes_markets() {
-        let _lock = TEST_MUTEX.lock().unwrap();
+        let _lock = lock_test_state().await;
         let (dir, client) = setup();
         let gamma_url = "https://gamma-api.polymarket.com/markets?limit=100";
         client.set_response(
@@ -487,7 +520,10 @@ mod tests {
             }),
         );
 
-        let cmd = Commands::Discover { active: None, closed: None };
+        let cmd = Commands::Discover {
+            active: None,
+            closed: None,
+        };
         run_command(cmd).await.unwrap();
 
         let path = dir.path().join("markets").join("markets.jsonl");
@@ -498,7 +534,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_collect_orderbook_static_missing_file() {
-        let _lock = TEST_MUTEX.lock().unwrap();
+        let _lock = lock_test_state().await;
         let (dir, _client) = setup();
         let cmd = Commands::CollectOrderbook {
             markets_path: Some(dir.path().join("nonexistent.jsonl")),
@@ -518,7 +554,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_collect_orderbook_static_empty_tokens() {
-        let _lock = TEST_MUTEX.lock().unwrap();
+        let _lock = lock_test_state().await;
         let (dir, _client) = setup();
         let markets_path = dir.path().join("markets.jsonl");
         write_markets(&markets_path, vec![]);
@@ -540,7 +576,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_collect_orderbook_static_runs() {
-        let _lock = TEST_MUTEX.lock().unwrap();
+        let _lock = lock_test_state().await;
         let (dir, _client) = setup();
         let markets_path = dir.path().join("markets.jsonl");
         write_markets(&markets_path, vec!["0xtoken1".to_string()]);
@@ -566,7 +602,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_collect_orderbook_orchestrated_dispatches() {
-        let _lock = TEST_MUTEX.lock().unwrap();
+        let _lock = lock_test_state().await;
         let (dir, _client) = setup();
         let markets_path = dir.path().join("markets.jsonl");
         write_markets(&markets_path, vec![]);
@@ -589,7 +625,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_aggregator_command_starts() {
-        let _lock = TEST_MUTEX.lock().unwrap();
+        let _lock = lock_test_state().await;
         let (dir, _client) = setup();
         let markets_path = dir.path().join("markets.jsonl");
         write_markets(&markets_path, vec!["0xtoken1".to_string()]);
@@ -615,7 +651,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_collect_trades_command_saves_trades() {
-        let _lock = TEST_MUTEX.lock().unwrap();
+        let _lock = lock_test_state().await;
         let (dir, client) = setup();
         let markets_path = dir.path().join("markets.jsonl");
         write_markets(&markets_path, vec!["0xasset1".to_string()]);
@@ -687,7 +723,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_scrape_onchain_command_writes_trades() {
-        let _lock = TEST_MUTEX.lock().unwrap();
+        let _lock = lock_test_state().await;
         let (dir, client) = setup();
         let output = dir.path().join("onchain.jsonl");
         let rpc_url = "https://polygon-rpc.com";
@@ -716,11 +752,16 @@ mod tests {
 
     #[tokio::test]
     async fn test_analyze_rewards_command_runs() {
-        let _lock = TEST_MUTEX.lock().unwrap();
+        let _lock = lock_test_state().await;
         let (dir, _client) = setup();
         let markets_path = dir.path().join("markets.jsonl");
         let mut file = std::fs::File::create(&markets_path).unwrap();
-        writeln!(file, "{}", serde_json::to_string(&reward_market(10.0)).unwrap()).unwrap();
+        writeln!(
+            file,
+            "{}",
+            serde_json::to_string(&reward_market(10.0)).unwrap()
+        )
+        .unwrap();
 
         let cmd = Commands::AnalyzeRewards { markets_path };
         run_command(cmd).await.unwrap();
@@ -728,7 +769,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_viewer_command_starts() {
-        let _lock = TEST_MUTEX.lock().unwrap();
+        let _lock = lock_test_state().await;
         let (dir, _client) = setup();
         let input_path = dir.path().join("aggregated.jsonl");
         std::fs::write(&input_path, "").unwrap();
@@ -744,15 +785,15 @@ mod tests {
 
     #[tokio::test]
     async fn test_default_http_client_falls_back_to_reqwest() {
-        let _lock = TEST_MUTEX.lock().unwrap();
+        let _lock = lock_test_state().await;
         test_helpers::clear_test_http_client();
         let _client = default_http_client();
         test_helpers::reset_test_http_client();
     }
 
-    #[test]
-    fn test_dispatch_data_dir_falls_back_to_project_data_dir() {
-        let _lock = TEST_MUTEX.lock().unwrap();
+    #[tokio::test]
+    async fn test_dispatch_data_dir_falls_back_to_project_data_dir() {
+        let _lock = lock_test_state().await;
         test_helpers::clear_test_data_dir();
         let path = dispatch_data_dir();
         assert!(path.to_string_lossy().ends_with("data"));
@@ -761,10 +802,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_collect_orderbook_limit_tokens() {
-        let _lock = TEST_MUTEX.lock().unwrap();
+        let _lock = lock_test_state().await;
         let (dir, _client) = setup();
         let markets_path = dir.path().join("markets.jsonl");
-        write_markets(&markets_path, vec!["0xtoken1".to_string(), "0xtoken2".to_string()]);
+        write_markets(
+            &markets_path,
+            vec!["0xtoken1".to_string(), "0xtoken2".to_string()],
+        );
         let cmd = Commands::CollectOrderbook {
             markets_path: Some(markets_path),
             output_dir: dir.path().join("orderbook"),
@@ -778,12 +822,15 @@ mod tests {
             limit_tokens: Some(1),
         };
         let result = timeout(Duration::from_secs(15), run_command(cmd)).await;
-        assert!(result.is_ok(), "collect orderbook with limit should complete");
+        assert!(
+            result.is_ok(),
+            "collect orderbook with limit should complete"
+        );
     }
 
     #[tokio::test]
     async fn test_collect_orderbook_needs_markets_path_or_aggregator() {
-        let _lock = TEST_MUTEX.lock().unwrap();
+        let _lock = lock_test_state().await;
         let (dir, _client) = setup();
         let cmd = Commands::CollectOrderbook {
             markets_path: None,
@@ -798,12 +845,14 @@ mod tests {
             limit_tokens: None,
         };
         let err = run_command(cmd).await.unwrap_err();
-        assert!(err.to_string().contains("Either --markets-path or --aggregator-url"));
+        assert!(err
+            .to_string()
+            .contains("Either --markets-path or --aggregator-url"));
     }
 
     #[tokio::test]
     async fn test_aggregator_command_missing_markets_file() {
-        let _lock = TEST_MUTEX.lock().unwrap();
+        let _lock = lock_test_state().await;
         let (dir, _client) = setup();
         let cmd = Commands::Aggregator {
             bind: "127.0.0.1:18080".to_string(),
@@ -822,7 +871,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_collect_trades_command_missing_markets_file() {
-        let _lock = TEST_MUTEX.lock().unwrap();
+        let _lock = lock_test_state().await;
         let (dir, _client) = setup();
         let cmd = Commands::CollectTrades {
             markets_path: dir.path().join("missing.jsonl"),
@@ -834,7 +883,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_analyze_rewards_command_missing_markets_file() {
-        let _lock = TEST_MUTEX.lock().unwrap();
+        let _lock = lock_test_state().await;
         let (dir, _client) = setup();
         let cmd = Commands::AnalyzeRewards {
             markets_path: dir.path().join("missing.jsonl"),
@@ -845,7 +894,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_viewer_command_missing_input_file() {
-        let _lock = TEST_MUTEX.lock().unwrap();
+        let _lock = lock_test_state().await;
         let (dir, _client) = setup();
         let cmd = Commands::Viewer {
             input_path: dir.path().join("missing.jsonl"),
@@ -898,7 +947,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_collect_orderbook_orchestrated_with_local_aggregator() {
-        let _lock = TEST_MUTEX.lock().unwrap();
+        let _lock = lock_test_state().await;
         let (dir, _client) = setup();
         let (tx, rx) = tokio::sync::oneshot::channel();
         let shutdown = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
@@ -921,13 +970,15 @@ mod tests {
         };
         let result = timeout(Duration::from_secs(30), run_command(cmd)).await;
         assert!(result.is_ok(), "orchestrated collect should complete");
-        result.unwrap().expect("orchestrated collect should succeed");
+        result
+            .unwrap()
+            .expect("orchestrated collect should succeed");
         shutdown.store(true, std::sync::atomic::Ordering::Relaxed);
     }
 
     #[tokio::test]
     async fn test_collect_trades_command_saves_multiple_trades() {
-        let _lock = TEST_MUTEX.lock().unwrap();
+        let _lock = lock_test_state().await;
         let (dir, client) = setup();
         let markets_path = dir.path().join("markets.jsonl");
         write_markets(
