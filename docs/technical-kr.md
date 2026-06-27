@@ -29,7 +29,8 @@
 │                              제어 흐름 (Orchestration)                        │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
-│   Gamma API ──► discover ──► markets.jsonl                                  │
+│   Gamma API ──► Aggregator live market refresh                              │
+│                  (startup fail-fast, 10분 주기 refresh, 12시간 stale 유지)    │
 │                                    │                                        │
 │                                    ▼                                        │
 │                           Aggregator (orchestrator)                         │
@@ -659,9 +660,17 @@ cargo build --release
 ### 6.3 WebSocket 수집
 
 ```bash
-# 정적 모드 (Aggregator 없이 로컬에 저장)
+# Standalone live 모드 (기본): Gamma API에서 시작/주기 refresh 후 로컬 저장
 ./target/release/polymarket-collector collect-orderbook \
-  --markets-path data/markets/markets.jsonl \
+  --output-dir data/orderbook \
+  --chunk-size 100 \
+  --market-refresh-interval-secs 600 \
+  --stale-market-ttl-hours 12 \
+  --duration-secs 3600
+
+# 명시적 정적 모드 (오프라인/fixture 파일 기반)
+./target/release/polymarket-collector collect-orderbook \
+  --static-markets-path data/markets/markets.jsonl \
   --output-dir data/orderbook \
   --chunk-size 100 \
   --duration-secs 3600
@@ -682,11 +691,12 @@ cargo build --release
 ./target/release/polymarket-collector aggregator \
   --bind 127.0.0.1:8080 \
   --output-path data/aggregated_orderbook.jsonl \
-  --markets-path data/markets/markets.jsonl \
   --s3-bucket my-polymarket-bucket \
   --s3-prefix orderbook/ \
   --replication-factor 2 \
   --heartbeat-timeout-secs 60 \
+  --market-refresh-interval-secs 600 \
+  --stale-market-ttl-hours 12 \
   --delete-after-merge
 ```
 

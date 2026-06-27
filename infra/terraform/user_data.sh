@@ -22,9 +22,6 @@ aws s3 cp "s3://${S3_BUCKET}/polymarket-collector" /opt/polymarket/polymarket-co
 chmod +x /opt/polymarket/polymarket-collector
 
 if [ "$MODE" = "aggregator" ]; then
-    # Download full markets.jsonl from S3
-    aws s3 cp "s3://${S3_BUCKET}/markets.jsonl" /data/markets.jsonl
-
     DELETE_FLAG=""
     if [ "$DELETE_AFTER_MERGE" = "true" ]; then
         DELETE_FLAG="--delete-after-merge"
@@ -42,7 +39,6 @@ RestartSec=5
 ExecStart=/opt/polymarket/polymarket-collector aggregator \\
     --bind 0.0.0.0:8080 \\
     --output-path /data/aggregated_orderbook.jsonl \\
-    --markets-path /data/markets.jsonl \\
     --s3-bucket ${S3_BUCKET} \\
     --s3-prefix ${S3_PREFIX} \\
     --region ${region} \\

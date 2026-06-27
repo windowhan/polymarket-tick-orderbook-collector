@@ -103,10 +103,7 @@ pub struct Market {
 /// Convenience wrapper that fetches markets using the production reqwest client.
 ///
 /// Kept for backward compatibility with `main.rs` and other callers.
-pub async fn fetch_markets(
-    active: Option<bool>,
-    closed: Option<bool>,
-) -> Result<Vec<Market>> {
+pub async fn fetch_markets(active: Option<bool>, closed: Option<bool>) -> Result<Vec<Market>> {
     fetch_markets_with_client(default_http_client().as_ref(), active, closed).await
 }
 
@@ -121,10 +118,7 @@ pub async fn fetch_markets_with_client(
     let limit = 100;
 
     loop {
-        let mut url = format!(
-            "https://gamma-api.polymarket.com/markets?limit={}",
-            limit
-        );
+        let mut url = format!("https://gamma-api.polymarket.com/markets?limit={}", limit);
         if offset > 0 {
             url.push_str(&format!("&offset={}", offset));
         }
@@ -165,7 +159,11 @@ pub async fn fetch_markets_with_client(
                 .unwrap_or_default();
 
             markets.push(Market {
-                id: item.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                id: item
+                    .get("id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string(),
                 condition_id: item
                     .get("conditionId")
                     .and_then(|v| v.as_str())
@@ -176,14 +174,27 @@ pub async fn fetch_markets_with_client(
                     .and_then(|v| v.as_str())
                     .unwrap_or("")
                     .to_string(),
-                slug: item.get("slug").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                slug: item
+                    .get("slug")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string(),
                 description: item
                     .get("description")
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string()),
-                active: item.get("active").and_then(|v| v.as_bool()).unwrap_or(false),
-                closed: item.get("closed").and_then(|v| v.as_bool()).unwrap_or(false),
-                archived: item.get("archived").and_then(|v| v.as_bool()).unwrap_or(false),
+                active: item
+                    .get("active")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false),
+                closed: item
+                    .get("closed")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false),
+                archived: item
+                    .get("archived")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false),
                 end_date: item
                     .get("endDate")
                     .and_then(|v| v.as_str())
@@ -220,7 +231,10 @@ pub async fn fetch_markets_with_client(
                 order_price_min_tick_size: item
                     .get("orderPriceMinTickSize")
                     .and_then(|v| v.as_f64()),
-                neg_risk: item.get("negRisk").and_then(|v| v.as_bool()).unwrap_or(false),
+                neg_risk: item
+                    .get("negRisk")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false),
                 accepting_orders: item
                     .get("acceptingOrders")
                     .and_then(|v| v.as_bool())
@@ -245,10 +259,7 @@ pub async fn fetch_markets_with_client(
 }
 
 /// Discover markets and persist to `data/markets/markets.jsonl`.
-pub async fn discover_and_save(
-    active: Option<bool>,
-    closed: Option<bool>,
-) -> Result<usize> {
+pub async fn discover_and_save(active: Option<bool>, closed: Option<bool>) -> Result<usize> {
     discover_and_save_with_client(
         default_http_client().as_ref(),
         active,
@@ -326,7 +337,9 @@ mod tests {
             Ok(ok_response(serde_json::json!([]))),
         );
 
-        let markets = fetch_markets_with_client(&client, None, None).await.unwrap();
+        let markets = fetch_markets_with_client(&client, None, None)
+            .await
+            .unwrap();
         assert!(markets.is_empty());
         assert_eq!(client.request_count(&gamma_url(None, None, 0)), 1);
     }
@@ -336,8 +349,9 @@ mod tests {
         let client = InMemoryHttpClient::new();
         let first_page: Vec<serde_json::Value> =
             (0..100).map(|i| market_item(&format!("m{}", i))).collect();
-        let second_page: Vec<serde_json::Value> =
-            (100..150).map(|i| market_item(&format!("m{}", i))).collect();
+        let second_page: Vec<serde_json::Value> = (100..150)
+            .map(|i| market_item(&format!("m{}", i)))
+            .collect();
 
         client.set_response(
             &gamma_url(None, None, 0),
@@ -348,7 +362,9 @@ mod tests {
             Ok(ok_response(serde_json::json!(second_page))),
         );
 
-        let markets = fetch_markets_with_client(&client, None, None).await.unwrap();
+        let markets = fetch_markets_with_client(&client, None, None)
+            .await
+            .unwrap();
         assert_eq!(markets.len(), 150);
         assert_eq!(markets[0].id, "m0");
         assert_eq!(markets[149].id, "m149");
@@ -401,7 +417,9 @@ mod tests {
         }]);
         client.set_response(&gamma_url(None, None, 0), Ok(ok_response(body)));
 
-        let markets = fetch_markets_with_client(&client, None, None).await.unwrap();
+        let markets = fetch_markets_with_client(&client, None, None)
+            .await
+            .unwrap();
         assert_eq!(markets.len(), 1);
         let m = &markets[0];
         assert_eq!(m.id, "");
@@ -454,7 +472,9 @@ mod tests {
         }]);
         client.set_response(&gamma_url(None, None, 0), Ok(ok_response(body)));
 
-        let markets = fetch_markets_with_client(&client, None, None).await.unwrap();
+        let markets = fetch_markets_with_client(&client, None, None)
+            .await
+            .unwrap();
         assert_eq!(markets.len(), 1);
         let m = &markets[0];
         assert_eq!(m.id, "m1");
@@ -508,7 +528,9 @@ mod tests {
         let err = fetch_markets_with_client(&client, None, None)
             .await
             .unwrap_err();
-        assert!(err.to_string().contains("Failed to parse Gamma markets response"));
+        assert!(err
+            .to_string()
+            .contains("Failed to parse Gamma markets response"));
     }
 
     #[tokio::test]
@@ -535,10 +557,15 @@ mod tests {
             let page: Vec<serde_json::Value> = (0..100)
                 .map(|i| market_item(&format!("m-{}", offset + i)))
                 .collect();
-            client.set_response(&gamma_url(None, None, offset), Ok(ok_response(serde_json::json!(page))));
+            client.set_response(
+                &gamma_url(None, None, offset),
+                Ok(ok_response(serde_json::json!(page))),
+            );
         }
 
-        let markets = fetch_markets_with_client(&client, None, None).await.unwrap();
+        let markets = fetch_markets_with_client(&client, None, None)
+            .await
+            .unwrap();
         assert_eq!(markets.len(), 10_000);
         assert_eq!(markets[0].id, "m-0");
         assert_eq!(markets[9999].id, "m-9999");
@@ -573,10 +600,7 @@ mod tests {
     #[tokio::test]
     async fn test_fetch_markets_network_error() {
         let client = InMemoryHttpClient::new();
-        client.set_response(
-            &gamma_url(None, None, 0),
-            Err("connection refused".into()),
-        );
+        client.set_response(&gamma_url(None, None, 0), Err("connection refused".into()));
 
         let err = fetch_markets_with_client(&client, None, None)
             .await
@@ -613,7 +637,10 @@ mod tests {
     #[tokio::test]
     async fn test_discover_and_save_with_client_empty() {
         let client = InMemoryHttpClient::new();
-        client.set_response(&gamma_url(None, None, 0), Ok(ok_response(serde_json::json!([]))));
+        client.set_response(
+            &gamma_url(None, None, 0),
+            Ok(ok_response(serde_json::json!([]))),
+        );
 
         let dir = tempdir().unwrap();
         let count = discover_and_save_with_client(&client, None, None, dir.path())
@@ -675,7 +702,11 @@ mod tests {
         clear_default_http_client();
 
         assert_eq!(count, 1);
-        let path = dir.path().join("data").join("markets").join("markets.jsonl");
+        let path = dir
+            .path()
+            .join("data")
+            .join("markets")
+            .join("markets.jsonl");
         assert!(path.exists());
         let content = std::fs::read_to_string(&path).unwrap();
         let parsed: Market = serde_json::from_str(content.lines().next().unwrap()).unwrap();

@@ -1,5 +1,9 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
+use polymarket_collector::dynamic_markets::{
+    GammaMarketSource, MarketRefreshPolicy, DEFAULT_MARKET_REFRESH_INTERVAL_SECS,
+    DEFAULT_STALE_MARKET_TTL_HOURS,
+};
 use polymarket_collector::http_client::HttpClient;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -25,14 +29,19 @@ pub enum Commands {
     },
     /// Collect real-time order book via WebSocket
     ///
-    /// In orchestrated mode (--aggregator-url), the collector registers with the
-    /// aggregator and receives its market assignment dynamically. Otherwise it
-    /// reads token IDs from --markets-path.
+    /// In orchestrated mode (`--aggregator-url`), the collector receives a
+    /// dynamic assignment from the aggregator. In standalone mode with no static
+    /// path, it fetches live Gamma markets directly. File-based collection is an
+    /// explicit offline/static mode via `--static-markets-path`.
     CollectOrderbook {
-        /// Path to markets.jsonl. Required in static mode; optional when
-        /// --aggregator-url is provided.
-        #[arg(long, default_value = "data/markets/markets.jsonl")]
+        /// Deprecated alias for --static-markets-path; hidden to avoid implying
+        /// that live collection falls back to data/markets/markets.jsonl.
+        #[arg(long, hide = true)]
         markets_path: Option<PathBuf>,
+        /// Explicit static/offline markets.jsonl path. When omitted without an
+        /// aggregator, the collector starts in API-first live mode.
+        #[arg(long)]
+        static_markets_path: Option<PathBuf>,
         /// Local directory for rotated orderbook files.
         #[arg(long, default_value = "data/orderbook")]
         output_dir: PathBuf,
@@ -54,10 +63,22 @@ pub enum Commands {
         /// Seconds between file rotations for local storage (default 300)
         #[arg(long, default_value = "300")]
         rotate_interval_secs: u64,
+        /// Seconds between standalone live Gamma market refreshes (default 600).
+        #[arg(long, default_value_t = DEFAULT_MARKET_REFRESH_INTERVAL_SECS)]
+        market_refresh_interval_secs: u64,
+        /// Hours to keep missing markets subscribed before removal (default 12).
+        #[arg(long, default_value_t = DEFAULT_STALE_MARKET_TTL_HOURS)]
+        stale_market_ttl_hours: u64,
+        /// Seconds between orchestrated assignment polls (default 60).
+        #[arg(
+            long,
+            default_value_t = polymarket_collector::ws_orderbook::DEFAULT_ASSIGNMENT_POLL_INTERVAL_SECS
+        )]
+        assignment_poll_interval_secs: u64,
         /// Run for N seconds then graceful shutdown (for testing)
         #[arg(long)]
         duration_secs: Option<u64>,
-        /// Limit total tokens for load testing
+        /// Limit total tokens for explicit static/offline load testing.
         #[arg(long)]
         limit_tokens: Option<usize>,
     },
@@ -70,9 +91,10 @@ pub enum Commands {
         bind: String,
         #[arg(long, default_value = "data/aggregated_orderbook.jsonl")]
         output_path: PathBuf,
-        /// Path to full markets.jsonl used for market discovery and allocation.
-        #[arg(long, default_value = "data/markets/markets.jsonl")]
-        markets_path: PathBuf,
+        /// Deprecated static markets path retained only as a hidden compatibility
+        /// alias; live aggregator startup always uses the Gamma API.
+        #[arg(long, hide = true)]
+        markets_path: Option<PathBuf>,
         /// S3 bucket where collectors upload rotated files.
         #[arg(long)]
         s3_bucket: String,
@@ -85,6 +107,12 @@ pub enum Commands {
         /// Seconds before a collector is considered stale (default 60).
         #[arg(long, default_value = "60")]
         heartbeat_timeout_secs: u64,
+        /// Seconds between live Gamma market refreshes (default 600).
+        #[arg(long, default_value_t = DEFAULT_MARKET_REFRESH_INTERVAL_SECS)]
+        market_refresh_interval_secs: u64,
+        /// Hours to keep missing markets assigned before removal (default 12).
+        #[arg(long, default_value_t = DEFAULT_STALE_MARKET_TTL_HOURS)]
+        stale_market_ttl_hours: u64,
         /// Delete S3 objects after merging.
         #[arg(long)]
         delete_after_merge: bool,
@@ -147,6 +175,115 @@ fn dispatch_data_dir() -> PathBuf {
     polymarket_collector::storage::data_dir()
 }
 
+/// Number of seconds in one hour for converting `--stale-market-ttl-hours`.
+const SECONDS_PER_HOUR: u64 = 60 * 60;
+
+/// Resolve the explicit static market path from the new flag or deprecated alias.
+///
+/// # Detailed Description
+/// Live orderbook collection is now API-first by default, so no local
+/// `data/markets/markets.jsonl` path is assumed. This helper keeps the old
+/// `--markets-path` flag as a hidden compatibility alias while requiring callers
+/// to choose only one static path spelling.
+///
+/// # Arguments
+/// * `static_markets_path` — Preferred explicit static/offline JSONL path.
+/// * `markets_path` — Deprecated alias for the same static/offline JSONL path.
+///
+/// # Returns
+/// The chosen static path, or `None` when the caller requested live API mode.
+///
+/// # Example — Input / Output
+/// ```rust,ignore
+/// let path = resolve_static_markets_path(Some("markets.jsonl".into()), None)?;
+/// assert_eq!(path.unwrap(), PathBuf::from("markets.jsonl"));
+/// ```
+///
+/// # Related
+/// - `Commands::CollectOrderbook`
+fn resolve_static_markets_path(
+    static_markets_path: Option<PathBuf>,
+    markets_path: Option<PathBuf>,
+) -> Result<Option<PathBuf>> {
+    match (static_markets_path, markets_path) {
+        (Some(_), Some(_)) => {
+            anyhow::bail!("Use only one of --static-markets-path or deprecated --markets-path")
+        }
+        (Some(path), None) | (None, Some(path)) => Ok(Some(path)),
+        (None, None) => Ok(None),
+    }
+}
+
+/// Build a live-market refresh policy from validated CLI timing flags.
+///
+/// # Detailed Description
+/// Tokio intervals require non-zero periods. This helper validates that
+/// user-supplied live refresh and stale-retention values are positive, then
+/// converts hours to seconds without changing the shared registry semantics.
+///
+/// # Arguments
+/// * `refresh_interval_secs` — Seconds between live Gamma refresh attempts.
+/// * `stale_market_ttl_hours` — Hours to keep missing markets before removal.
+///
+/// # Returns
+/// A [`MarketRefreshPolicy`] or an error for invalid zero/overflow values.
+///
+/// # Example — Input / Output
+/// ```rust,ignore
+/// let policy = market_refresh_policy_from_cli(600, 12)?;
+/// assert_eq!(policy.refresh_interval, Duration::from_secs(600));
+/// assert_eq!(policy.stale_ttl, Duration::from_secs(43_200));
+/// ```
+///
+/// # Related
+/// - [`MarketRefreshPolicy`]
+fn market_refresh_policy_from_cli(
+    refresh_interval_secs: u64,
+    stale_market_ttl_hours: u64,
+) -> Result<MarketRefreshPolicy> {
+    if refresh_interval_secs == 0 {
+        anyhow::bail!("--market-refresh-interval-secs must be greater than 0");
+    }
+    if stale_market_ttl_hours == 0 {
+        anyhow::bail!("--stale-market-ttl-hours must be greater than 0");
+    }
+    let stale_ttl_secs = stale_market_ttl_hours
+        .checked_mul(SECONDS_PER_HOUR)
+        .ok_or_else(|| anyhow::anyhow!("--stale-market-ttl-hours is too large"))?;
+    Ok(MarketRefreshPolicy {
+        refresh_interval: Duration::from_secs(refresh_interval_secs),
+        stale_ttl: Duration::from_secs(stale_ttl_secs),
+    })
+}
+
+/// Convert a positive second count into a [`Duration`] for a named CLI flag.
+///
+/// # Detailed Description
+/// Assignment polling and other Tokio interval-backed values must be non-zero.
+/// Keeping the validation in one helper prevents panics from invalid CLI input.
+///
+/// # Arguments
+/// * `seconds` — User-provided interval in seconds.
+/// * `flag_name` — CLI flag name included in validation errors.
+///
+/// # Returns
+/// A positive [`Duration`] when valid.
+///
+/// # Example — Input / Output
+/// ```rust,ignore
+/// let interval = positive_duration_secs(60, "--assignment-poll-interval-secs")?;
+/// assert_eq!(interval, Duration::from_secs(60));
+/// ```
+///
+/// # Related
+/// - [`polymarket_collector::ws_orderbook::OrderbookCollector::with_assignment_poll_interval`]
+fn positive_duration_secs(seconds: u64, flag_name: &str) -> Result<Duration> {
+    if seconds == 0 {
+        anyhow::bail!("{flag_name} must be greater than 0");
+    }
+    Ok(Duration::from_secs(seconds))
+}
+
 #[cfg(test)]
 mod test_helpers {
     use polymarket_collector::http_client::InMemoryHttpClient;
@@ -201,6 +338,7 @@ pub async fn run_command(command: Commands) -> Result<()> {
 
         Commands::CollectOrderbook {
             markets_path,
+            static_markets_path,
             output_dir,
             aggregator_url,
             s3_bucket,
@@ -208,22 +346,38 @@ pub async fn run_command(command: Commands) -> Result<()> {
             aws_region,
             chunk_size,
             rotate_interval_secs,
+            market_refresh_interval_secs,
+            stale_market_ttl_hours,
+            assignment_poll_interval_secs,
             duration_secs,
             limit_tokens,
         } => {
-            if aggregator_url.is_none() && markets_path.is_none() {
-                anyhow::bail!("Either --markets-path or --aggregator-url must be provided");
+            let static_markets_path =
+                resolve_static_markets_path(static_markets_path, markets_path)?;
+            if aggregator_url.is_some() && static_markets_path.is_some() {
+                anyhow::bail!("Static market paths cannot be combined with --aggregator-url");
+            }
+            let market_refresh_policy = market_refresh_policy_from_cli(
+                market_refresh_interval_secs,
+                stale_market_ttl_hours,
+            )?;
+            let assignment_poll_interval = positive_duration_secs(
+                assignment_poll_interval_secs,
+                "--assignment-poll-interval-secs",
+            )?;
+            let live_mode = aggregator_url.is_none() && static_markets_path.is_none();
+            if limit_tokens.is_some() && static_markets_path.is_none() {
+                anyhow::bail!("--limit-tokens is only supported with --static-markets-path");
             }
 
-            // In orchestrated mode, token IDs come from the aggregator.
-            // In static mode, they come from the markets file.
+            // In orchestrated mode, token IDs come from the aggregator. In
+            // standalone live mode, token IDs come from the injected Gamma source
+            // inside `OrderbookCollector::run`. Only explicit static mode reads a
+            // local markets file.
             let token_ids = if let Some(_url) = &aggregator_url {
                 // Orchestrated mode: token IDs will be fetched from aggregator at runtime.
                 Vec::new()
-            } else {
-                let Some(path) = markets_path.as_ref() else {
-                    anyhow::bail!("Either --markets-path or --aggregator-url must be provided");
-                };
+            } else if let Some(path) = static_markets_path.as_ref() {
                 if !path.exists() {
                     anyhow::bail!("Markets file not found: {}", path.display());
                 }
@@ -246,12 +400,18 @@ pub async fn run_command(command: Commands) -> Result<()> {
                     anyhow::bail!("No token IDs found in markets file");
                 }
                 ids
+            } else {
+                // Standalone live mode: initial fetch and fail-fast validation
+                // happen inside the collector using the configured source.
+                Vec::new()
             };
 
             info!(
                 token_count = token_ids.len(),
                 chunk_size,
                 aggregator_url = ?aggregator_url,
+                static_markets_path = ?static_markets_path,
+                live_mode,
                 "Starting order book collection"
             );
 
@@ -265,7 +425,12 @@ pub async fn run_command(command: Commands) -> Result<()> {
             );
 
             if let Some(url) = aggregator_url {
-                collector = collector.with_aggregator_url(url);
+                collector = collector
+                    .with_aggregator_url(url)
+                    .with_assignment_poll_interval(assignment_poll_interval);
+            } else if live_mode {
+                let market_source = Arc::new(GammaMarketSource::new(default_http_client()));
+                collector = collector.with_market_source(market_source, market_refresh_policy);
             }
 
             if let Some(bucket) = s3_bucket {
@@ -283,34 +448,40 @@ pub async fn run_command(command: Commands) -> Result<()> {
             s3_prefix,
             replication_factor,
             heartbeat_timeout_secs,
+            market_refresh_interval_secs,
+            stale_market_ttl_hours,
             delete_after_merge,
             region,
         } => {
-            if !markets_path.exists() {
-                anyhow::bail!("Markets file not found: {}", markets_path.display());
-            }
-
+            let market_refresh_policy = market_refresh_policy_from_cli(
+                market_refresh_interval_secs,
+                stale_market_ttl_hours,
+            )?;
             info!(
                 bind = %bind,
                 path = %output_path.display(),
-                markets = %markets_path.display(),
+                legacy_markets_path = ?markets_path,
                 bucket = %s3_bucket,
                 prefix = %s3_prefix,
                 replication_factor,
                 heartbeat_timeout_secs,
-                "Starting orchestrated aggregator"
+                market_refresh_interval_secs,
+                stale_market_ttl_hours,
+                "Starting API-first orchestrated aggregator"
             );
 
-            polymarket_collector::aggregator::run(
+            let market_source = Arc::new(GammaMarketSource::new(default_http_client()));
+            polymarket_collector::aggregator::run_with_market_source(
                 &bind,
                 output_path,
-                markets_path,
                 s3_bucket,
                 s3_prefix,
                 replication_factor,
                 Duration::from_secs(heartbeat_timeout_secs),
                 delete_after_merge,
                 region,
+                market_source,
+                market_refresh_policy,
             )
             .await?;
         }
@@ -452,19 +623,37 @@ mod tests {
     fn market_json(token_ids: Vec<String>) -> serde_json::Value {
         serde_json::json!({
             "id": "m1",
+            "conditionId": "cond1",
             "condition_id": "cond1",
             "question": "Will it rain?",
             "slug": "rain",
             "active": true,
             "closed": false,
             "archived": false,
+            // Safe in tests: a vector of strings is always JSON-serializable.
             "clobTokenIds": serde_json::to_string(&token_ids).unwrap(),
+            "clobRewards": [],
             "clob_rewards": [],
             "token_ids": token_ids,
+            "enableOrderBook": true,
             "enable_order_book": true,
+            "negRisk": false,
             "neg_risk": false,
+            "acceptingOrders": true,
             "accepting_orders": true,
         })
+    }
+
+    fn set_live_markets_response(client: &InMemoryHttpClient, token_ids: Vec<String>) {
+        client.set_response(
+            "https://gamma-api.polymarket.com/markets?limit=100&active=true&closed=false",
+            Ok(HttpResponse {
+                status: 200,
+                body: serde_json::to_string(&serde_json::json!([market_json(token_ids)]))
+                    // Safe in tests: the helper emits a plain JSON object array.
+                    .unwrap(),
+            }),
+        );
     }
 
     fn write_markets(path: &std::path::Path, token_ids: Vec<String>) {
@@ -537,7 +726,8 @@ mod tests {
         let _lock = lock_test_state().await;
         let (dir, _client) = setup();
         let cmd = Commands::CollectOrderbook {
-            markets_path: Some(dir.path().join("nonexistent.jsonl")),
+            markets_path: None,
+            static_markets_path: Some(dir.path().join("nonexistent.jsonl")),
             output_dir: dir.path().join("orderbook"),
             aggregator_url: None,
             s3_bucket: None,
@@ -545,6 +735,10 @@ mod tests {
             aws_region: "us-east-1".to_string(),
             chunk_size: 100,
             rotate_interval_secs: 300,
+            market_refresh_interval_secs: DEFAULT_MARKET_REFRESH_INTERVAL_SECS,
+            stale_market_ttl_hours: DEFAULT_STALE_MARKET_TTL_HOURS,
+            assignment_poll_interval_secs:
+                polymarket_collector::ws_orderbook::DEFAULT_ASSIGNMENT_POLL_INTERVAL_SECS,
             duration_secs: None,
             limit_tokens: None,
         };
@@ -559,7 +753,8 @@ mod tests {
         let markets_path = dir.path().join("markets.jsonl");
         write_markets(&markets_path, vec![]);
         let cmd = Commands::CollectOrderbook {
-            markets_path: Some(markets_path),
+            markets_path: None,
+            static_markets_path: Some(markets_path),
             output_dir: dir.path().join("orderbook"),
             aggregator_url: None,
             s3_bucket: None,
@@ -567,6 +762,10 @@ mod tests {
             aws_region: "us-east-1".to_string(),
             chunk_size: 100,
             rotate_interval_secs: 300,
+            market_refresh_interval_secs: DEFAULT_MARKET_REFRESH_INTERVAL_SECS,
+            stale_market_ttl_hours: DEFAULT_STALE_MARKET_TTL_HOURS,
+            assignment_poll_interval_secs:
+                polymarket_collector::ws_orderbook::DEFAULT_ASSIGNMENT_POLL_INTERVAL_SECS,
             duration_secs: None,
             limit_tokens: None,
         };
@@ -582,7 +781,8 @@ mod tests {
         write_markets(&markets_path, vec!["0xtoken1".to_string()]);
         let output_dir = dir.path().join("orderbook");
         let cmd = Commands::CollectOrderbook {
-            markets_path: Some(markets_path),
+            markets_path: None,
+            static_markets_path: Some(markets_path),
             output_dir,
             aggregator_url: None,
             s3_bucket: None,
@@ -590,6 +790,10 @@ mod tests {
             aws_region: "us-east-1".to_string(),
             chunk_size: 100,
             rotate_interval_secs: 300,
+            market_refresh_interval_secs: DEFAULT_MARKET_REFRESH_INTERVAL_SECS,
+            stale_market_ttl_hours: DEFAULT_STALE_MARKET_TTL_HOURS,
+            assignment_poll_interval_secs:
+                polymarket_collector::ws_orderbook::DEFAULT_ASSIGNMENT_POLL_INTERVAL_SECS,
             duration_secs: Some(1),
             limit_tokens: None,
         };
@@ -604,11 +808,10 @@ mod tests {
     async fn test_collect_orderbook_orchestrated_dispatches() {
         let _lock = lock_test_state().await;
         let (dir, _client) = setup();
-        let markets_path = dir.path().join("markets.jsonl");
-        write_markets(&markets_path, vec![]);
         // Point at an unreachable aggregator so registration fails quickly.
         let cmd = Commands::CollectOrderbook {
-            markets_path: Some(markets_path),
+            markets_path: None,
+            static_markets_path: None,
             output_dir: dir.path().join("orderbook"),
             aggregator_url: Some("http://127.0.0.1:1".to_string()),
             s3_bucket: None,
@@ -616,6 +819,10 @@ mod tests {
             aws_region: "us-east-1".to_string(),
             chunk_size: 100,
             rotate_interval_secs: 300,
+            market_refresh_interval_secs: DEFAULT_MARKET_REFRESH_INTERVAL_SECS,
+            stale_market_ttl_hours: DEFAULT_STALE_MARKET_TTL_HOURS,
+            assignment_poll_interval_secs:
+                polymarket_collector::ws_orderbook::DEFAULT_ASSIGNMENT_POLL_INTERVAL_SECS,
             duration_secs: Some(1),
             limit_tokens: None,
         };
@@ -626,19 +833,20 @@ mod tests {
     #[tokio::test]
     async fn test_aggregator_command_starts() {
         let _lock = lock_test_state().await;
-        let (dir, _client) = setup();
-        let markets_path = dir.path().join("markets.jsonl");
-        write_markets(&markets_path, vec!["0xtoken1".to_string()]);
+        let (dir, client) = setup();
+        set_live_markets_response(&client, vec!["0xtoken1".to_string()]);
         let output_path = dir.path().join("aggregated.jsonl");
         let port = find_free_port();
         let cmd = Commands::Aggregator {
             bind: format!("127.0.0.1:{}", port),
             output_path,
-            markets_path,
+            markets_path: None,
             s3_bucket: "dummy-bucket".to_string(),
             s3_prefix: "orderbook/".to_string(),
             replication_factor: 1,
             heartbeat_timeout_secs: 60,
+            market_refresh_interval_secs: DEFAULT_MARKET_REFRESH_INTERVAL_SECS,
+            stale_market_ttl_hours: DEFAULT_STALE_MARKET_TTL_HOURS,
             delete_after_merge: false,
             region: "us-east-1".to_string(),
         };
@@ -810,7 +1018,8 @@ mod tests {
             vec!["0xtoken1".to_string(), "0xtoken2".to_string()],
         );
         let cmd = Commands::CollectOrderbook {
-            markets_path: Some(markets_path),
+            markets_path: None,
+            static_markets_path: Some(markets_path),
             output_dir: dir.path().join("orderbook"),
             aggregator_url: None,
             s3_bucket: None,
@@ -818,6 +1027,10 @@ mod tests {
             aws_region: "us-east-1".to_string(),
             chunk_size: 100,
             rotate_interval_secs: 300,
+            market_refresh_interval_secs: DEFAULT_MARKET_REFRESH_INTERVAL_SECS,
+            stale_market_ttl_hours: DEFAULT_STALE_MARKET_TTL_HOURS,
+            assignment_poll_interval_secs:
+                polymarket_collector::ws_orderbook::DEFAULT_ASSIGNMENT_POLL_INTERVAL_SECS,
             duration_secs: Some(1),
             limit_tokens: Some(1),
         };
@@ -829,11 +1042,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_collect_orderbook_needs_markets_path_or_aggregator() {
+    async fn test_collect_orderbook_limit_tokens_requires_static_path() {
         let _lock = lock_test_state().await;
         let (dir, _client) = setup();
         let cmd = Commands::CollectOrderbook {
             markets_path: None,
+            static_markets_path: None,
             output_dir: dir.path().join("orderbook"),
             aggregator_url: None,
             s3_bucket: None,
@@ -841,32 +1055,121 @@ mod tests {
             aws_region: "us-east-1".to_string(),
             chunk_size: 100,
             rotate_interval_secs: 300,
+            market_refresh_interval_secs: DEFAULT_MARKET_REFRESH_INTERVAL_SECS,
+            stale_market_ttl_hours: DEFAULT_STALE_MARKET_TTL_HOURS,
+            assignment_poll_interval_secs:
+                polymarket_collector::ws_orderbook::DEFAULT_ASSIGNMENT_POLL_INTERVAL_SECS,
+            duration_secs: Some(1),
+            limit_tokens: Some(1),
+        };
+        let err = run_command(cmd).await.unwrap_err();
+        assert!(err.to_string().contains("--limit-tokens is only supported"));
+    }
+
+    #[tokio::test]
+    async fn test_collect_orderbook_default_live_fails_without_api_markets() {
+        let _lock = lock_test_state().await;
+        let (dir, _client) = setup();
+        let cmd = Commands::CollectOrderbook {
+            markets_path: None,
+            static_markets_path: None,
+            output_dir: dir.path().join("orderbook"),
+            aggregator_url: None,
+            s3_bucket: None,
+            s3_prefix: "orderbook/".to_string(),
+            aws_region: "us-east-1".to_string(),
+            chunk_size: 100,
+            rotate_interval_secs: 300,
+            market_refresh_interval_secs: DEFAULT_MARKET_REFRESH_INTERVAL_SECS,
+            stale_market_ttl_hours: DEFAULT_STALE_MARKET_TTL_HOURS,
+            assignment_poll_interval_secs:
+                polymarket_collector::ws_orderbook::DEFAULT_ASSIGNMENT_POLL_INTERVAL_SECS,
             duration_secs: None,
             limit_tokens: None,
         };
         let err = run_command(cmd).await.unwrap_err();
         assert!(err
             .to_string()
-            .contains("Either --markets-path or --aggregator-url"));
+            .contains("initial standalone live market fetch failed"));
     }
 
     #[tokio::test]
-    async fn test_aggregator_command_missing_markets_file() {
+    async fn test_collect_orderbook_default_live_runs_from_api() {
+        let _lock = lock_test_state().await;
+        let (dir, client) = setup();
+        set_live_markets_response(&client, vec!["0xtoken1".to_string()]);
+        let cmd = Commands::CollectOrderbook {
+            markets_path: None,
+            static_markets_path: None,
+            output_dir: dir.path().join("orderbook"),
+            aggregator_url: None,
+            s3_bucket: None,
+            s3_prefix: "orderbook/".to_string(),
+            aws_region: "us-east-1".to_string(),
+            chunk_size: 100,
+            rotate_interval_secs: 300,
+            market_refresh_interval_secs: DEFAULT_MARKET_REFRESH_INTERVAL_SECS,
+            stale_market_ttl_hours: DEFAULT_STALE_MARKET_TTL_HOURS,
+            assignment_poll_interval_secs:
+                polymarket_collector::ws_orderbook::DEFAULT_ASSIGNMENT_POLL_INTERVAL_SECS,
+            duration_secs: Some(1),
+            limit_tokens: None,
+        };
+        let result = timeout(Duration::from_secs(15), run_command(cmd)).await;
+        assert!(
+            result.is_ok(),
+            "default live orderbook collection should complete within timeout"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_collect_orderbook_static_path_conflicts_with_aggregator() {
+        let _lock = lock_test_state().await;
+        let (dir, _client) = setup();
+        let markets_path = dir.path().join("markets.jsonl");
+        write_markets(&markets_path, vec!["0xtoken1".to_string()]);
+        let cmd = Commands::CollectOrderbook {
+            markets_path: None,
+            static_markets_path: Some(markets_path),
+            output_dir: dir.path().join("orderbook"),
+            aggregator_url: Some("http://127.0.0.1:1".to_string()),
+            s3_bucket: None,
+            s3_prefix: "orderbook/".to_string(),
+            aws_region: "us-east-1".to_string(),
+            chunk_size: 100,
+            rotate_interval_secs: 300,
+            market_refresh_interval_secs: DEFAULT_MARKET_REFRESH_INTERVAL_SECS,
+            stale_market_ttl_hours: DEFAULT_STALE_MARKET_TTL_HOURS,
+            assignment_poll_interval_secs:
+                polymarket_collector::ws_orderbook::DEFAULT_ASSIGNMENT_POLL_INTERVAL_SECS,
+            duration_secs: Some(1),
+            limit_tokens: None,
+        };
+        let err = run_command(cmd).await.unwrap_err();
+        assert!(err
+            .to_string()
+            .contains("Static market paths cannot be combined"));
+    }
+
+    #[tokio::test]
+    async fn test_aggregator_command_fails_when_initial_live_fetch_fails() {
         let _lock = lock_test_state().await;
         let (dir, _client) = setup();
         let cmd = Commands::Aggregator {
             bind: "127.0.0.1:18080".to_string(),
             output_path: dir.path().join("out.jsonl"),
-            markets_path: dir.path().join("missing.jsonl"),
+            markets_path: None,
             s3_bucket: "dummy".to_string(),
             s3_prefix: "orderbook/".to_string(),
             replication_factor: 1,
             heartbeat_timeout_secs: 60,
+            market_refresh_interval_secs: DEFAULT_MARKET_REFRESH_INTERVAL_SECS,
+            stale_market_ttl_hours: DEFAULT_STALE_MARKET_TTL_HOURS,
             delete_after_merge: false,
             region: "us-east-1".to_string(),
         };
         let err = run_command(cmd).await.unwrap_err();
-        assert!(err.to_string().contains("Markets file not found"));
+        assert!(err.to_string().contains("initial live market fetch failed"));
     }
 
     #[tokio::test]
@@ -922,8 +1225,9 @@ mod tests {
                 "/assignment/:collector_id",
                 get(|| async {
                     Json(serde_json::json!({
-                        "token_ids": [],
-                        "chunk_size": 100,
+                        "token_ids": ["token1"],
+                        "chunk_size": 1,
+                        "version": 1,
                     }))
                 }),
             )
@@ -958,6 +1262,7 @@ mod tests {
 
         let cmd = Commands::CollectOrderbook {
             markets_path: None,
+            static_markets_path: None,
             output_dir: dir.path().join("orderbook"),
             aggregator_url: Some(aggregator_url),
             s3_bucket: None,
@@ -965,6 +1270,10 @@ mod tests {
             aws_region: "us-east-1".to_string(),
             chunk_size: 100,
             rotate_interval_secs: 300,
+            market_refresh_interval_secs: DEFAULT_MARKET_REFRESH_INTERVAL_SECS,
+            stale_market_ttl_hours: DEFAULT_STALE_MARKET_TTL_HOURS,
+            assignment_poll_interval_secs:
+                polymarket_collector::ws_orderbook::DEFAULT_ASSIGNMENT_POLL_INTERVAL_SECS,
             duration_secs: Some(1),
             limit_tokens: None,
         };

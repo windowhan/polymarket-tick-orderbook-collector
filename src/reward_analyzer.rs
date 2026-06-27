@@ -147,7 +147,12 @@ mod tests {
     use crate::market_discovery::{ClobReward, Market};
     use tempfile::tempdir;
 
-    fn market(active: bool, daily_rate: f64, spread: Option<f64>, competitive: Option<f64>) -> Market {
+    fn market(
+        active: bool,
+        daily_rate: f64,
+        spread: Option<f64>,
+        competitive: Option<f64>,
+    ) -> Market {
         Market {
             id: "id".to_string(),
             condition_id: "cond".to_string(),

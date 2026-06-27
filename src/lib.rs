@@ -1,5 +1,6 @@
 pub mod aggregate_s3;
 pub mod aggregator;
+pub mod dynamic_markets;
 pub mod http_client;
 pub mod market_discovery;
 pub mod onchain;

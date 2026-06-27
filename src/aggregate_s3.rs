@@ -385,9 +385,13 @@ mod tests {
     #[tokio::test]
     async fn test_in_memory_put_object() {
         let s3 = InMemoryS3Service::default();
-        s3.put_object("test-bucket", "orderbook/2025-06-08/12/file.jsonl", b"hello".to_vec())
-            .await
-            .unwrap();
+        s3.put_object(
+            "test-bucket",
+            "orderbook/2025-06-08/12/file.jsonl",
+            b"hello".to_vec(),
+        )
+        .await
+        .unwrap();
 
         let objects = s3.list_objects("test-bucket", "orderbook/").await.unwrap();
         assert_eq!(objects.len(), 1);
@@ -442,7 +446,9 @@ mod tests {
             bytes_downloaded: 1024,
         };
 
-        write_manifest(&manifest_path, summary, &opts).await.unwrap();
+        write_manifest(&manifest_path, summary, &opts)
+            .await
+            .unwrap();
         let content = tokio::fs::read_to_string(&manifest_path).await.unwrap();
         assert!(content.contains("\"bucket\": \"test-bucket\""));
         assert!(content.contains("\"lines_merged\": 100"));

@@ -453,7 +453,10 @@ mod tests {
 
     #[test]
     fn test_normalize_address_all_zeros() {
-        assert_eq!(normalize_address("0x0000000000000000000000000000000000000000"), "0x");
+        assert_eq!(
+            normalize_address("0x0000000000000000000000000000000000000000"),
+            "0x"
+        );
     }
 
     #[test]
@@ -479,13 +482,34 @@ mod tests {
         assert_eq!(trade.maker, "0x448861155279dbf833d041b963e3ac854599e319");
         assert_eq!(trade.taker, "0x6f3c1ddc97c9abfb38ff0f1302a56a1946d04c6f");
         assert_eq!(trade.side, 0);
-        assert_eq!(trade.token_id, "0x66fc627fc41c09ce984d8db2aa4dcc8102d201581e73ad410b142f209832e207");
-        assert_eq!(trade.maker_amount_filled, "0x0000000000000000000000000000000000000000000000000000000000001234");
-        assert_eq!(trade.taker_amount_filled, "0x0000000000000000000000000000000000000000000000000000000000005678");
-        assert_eq!(trade.fee, "0x0000000000000000000000000000000000000000000000000000000000000000");
-        assert_eq!(trade.builder, "0x000000000000000000000000000000000000000000000000000000000000abcd");
-        assert_eq!(trade.metadata, "0x000000000000000000000000000000000000000000000000000000000000ef01");
-        assert_eq!(trade.transaction_hash, "0x5e5fe7c64a30b1d23366bf508ea288b994e3b3d8d5afd5facd991af8551dae02");
+        assert_eq!(
+            trade.token_id,
+            "0x66fc627fc41c09ce984d8db2aa4dcc8102d201581e73ad410b142f209832e207"
+        );
+        assert_eq!(
+            trade.maker_amount_filled,
+            "0x0000000000000000000000000000000000000000000000000000000000001234"
+        );
+        assert_eq!(
+            trade.taker_amount_filled,
+            "0x0000000000000000000000000000000000000000000000000000000000005678"
+        );
+        assert_eq!(
+            trade.fee,
+            "0x0000000000000000000000000000000000000000000000000000000000000000"
+        );
+        assert_eq!(
+            trade.builder,
+            "0x000000000000000000000000000000000000000000000000000000000000abcd"
+        );
+        assert_eq!(
+            trade.metadata,
+            "0x000000000000000000000000000000000000000000000000000000000000ef01"
+        );
+        assert_eq!(
+            trade.transaction_hash,
+            "0x5e5fe7c64a30b1d23366bf508ea288b994e3b3d8d5afd5facd991af8551dae02"
+        );
         assert_eq!(trade.block_number, 0x5424d9d);
         assert_eq!(trade.log_index, 0x38e);
     }
@@ -493,7 +517,11 @@ mod tests {
     #[test]
     fn test_parse_log_sell_side() {
         let mut log = sample_log();
-        log["data"] = sample_data(1, "0x66fc627fc41c09ce984d8db2aa4dcc8102d201581e73ad410b142f209832e207").into();
+        log["data"] = sample_data(
+            1,
+            "0x66fc627fc41c09ce984d8db2aa4dcc8102d201581e73ad410b142f209832e207",
+        )
+        .into();
         let trade = parse_log(&log).unwrap();
         assert_eq!(trade.side, 1);
     }
@@ -647,21 +675,12 @@ mod tests {
     async fn test_get_logs_success() {
         let client = InMemoryHttpClient::new();
         let rpc_url = "https://polygon-rpc.com";
-        client.set_response(
-            rpc_url,
-            Ok(rpc_response(serde_json::json!([sample_log()]))),
-        );
+        client.set_response(rpc_url, Ok(rpc_response(serde_json::json!([sample_log()]))));
 
-        let logs = get_logs_with_client(
-            &client,
-            rpc_url,
-            1,
-            10,
-            CTF_EXCHANGE_V2,
-            ORDER_FILLED_TOPIC,
-        )
-        .await
-        .unwrap();
+        let logs =
+            get_logs_with_client(&client, rpc_url, 1, 10, CTF_EXCHANGE_V2, ORDER_FILLED_TOPIC)
+                .await
+                .unwrap();
 
         assert_eq!(logs.len(), 1);
         assert_eq!(client.request_count(rpc_url), 1);
@@ -684,16 +703,10 @@ mod tests {
             }),
         );
 
-        let err = get_logs_with_client(
-            &client,
-            rpc_url,
-            1,
-            10,
-            CTF_EXCHANGE_V2,
-            ORDER_FILLED_TOPIC,
-        )
-        .await
-        .unwrap_err();
+        let err =
+            get_logs_with_client(&client, rpc_url, 1, 10, CTF_EXCHANGE_V2, ORDER_FILLED_TOPIC)
+                .await
+                .unwrap_err();
 
         assert!(err.to_string().contains("RPC error"));
     }
@@ -710,16 +723,10 @@ mod tests {
             }),
         );
 
-        let err = get_logs_with_client(
-            &client,
-            rpc_url,
-            1,
-            10,
-            CTF_EXCHANGE_V2,
-            ORDER_FILLED_TOPIC,
-        )
-        .await
-        .unwrap_err();
+        let err =
+            get_logs_with_client(&client, rpc_url, 1, 10, CTF_EXCHANGE_V2, ORDER_FILLED_TOPIC)
+                .await
+                .unwrap_err();
 
         assert!(err.to_string().contains("RPC HTTP error"));
     }
@@ -730,16 +737,10 @@ mod tests {
         let rpc_url = "https://polygon-rpc.com";
         client.set_response(rpc_url, Ok(rpc_response(serde_json::json!([]))));
 
-        let logs = get_logs_with_client(
-            &client,
-            rpc_url,
-            1,
-            10,
-            CTF_EXCHANGE_V2,
-            ORDER_FILLED_TOPIC,
-        )
-        .await
-        .unwrap();
+        let logs =
+            get_logs_with_client(&client, rpc_url, 1, 10, CTF_EXCHANGE_V2, ORDER_FILLED_TOPIC)
+                .await
+                .unwrap();
 
         assert!(logs.is_empty());
     }
@@ -824,22 +825,11 @@ mod tests {
         let path = dir.path().join("onchain.jsonl");
         let rpc_url = "https://polygon-rpc.com";
 
-        client.set_response(
-            rpc_url,
-            Ok(rpc_response(serde_json::json!([sample_log()]))),
-        );
+        client.set_response(rpc_url, Ok(rpc_response(serde_json::json!([sample_log()]))));
 
-        let count = scrape_exchange_with_client(
-            &client,
-            rpc_url,
-            CTF_EXCHANGE_V2,
-            1,
-            1,
-            1,
-            &path,
-        )
-        .await
-        .unwrap();
+        let count = scrape_exchange_with_client(&client, rpc_url, CTF_EXCHANGE_V2, 1, 1, 1, &path)
+            .await
+            .unwrap();
 
         assert_eq!(count, 1);
         let content = tokio::fs::read_to_string(&path).await.unwrap();
@@ -861,17 +851,9 @@ mod tests {
             ],
         );
 
-        let count = scrape_exchange_with_client(
-            &client,
-            rpc_url,
-            CTF_EXCHANGE_V2,
-            1,
-            1,
-            1,
-            &path,
-        )
-        .await
-        .unwrap();
+        let count = scrape_exchange_with_client(&client, rpc_url, CTF_EXCHANGE_V2, 1, 1, 1, &path)
+            .await
+            .unwrap();
 
         assert_eq!(count, 1);
         assert_eq!(client.request_count(rpc_url), 2);
@@ -888,17 +870,9 @@ mod tests {
         log["data"] = "0x1234".into();
         client.set_response(rpc_url, Ok(rpc_response(serde_json::json!([log]))));
 
-        let count = scrape_exchange_with_client(
-            &client,
-            rpc_url,
-            CTF_EXCHANGE_V2,
-            1,
-            1,
-            1,
-            &path,
-        )
-        .await
-        .unwrap();
+        let count = scrape_exchange_with_client(&client, rpc_url, CTF_EXCHANGE_V2, 1, 1, 1, &path)
+            .await
+            .unwrap();
 
         assert_eq!(count, 0);
         assert!(!path.exists());
@@ -911,22 +885,11 @@ mod tests {
         let path = dir.path().join("onchain.jsonl");
         let rpc_url = "https://polygon-rpc.com";
 
-        client.set_response(
-            rpc_url,
-            Ok(rpc_response(serde_json::json!([sample_log()]))),
-        );
+        client.set_response(rpc_url, Ok(rpc_response(serde_json::json!([sample_log()]))));
 
-        let count = scrape_exchange_with_client(
-            &client,
-            rpc_url,
-            CTF_EXCHANGE_V2,
-            1,
-            5,
-            2,
-            &path,
-        )
-        .await
-        .unwrap();
+        let count = scrape_exchange_with_client(&client, rpc_url, CTF_EXCHANGE_V2, 1, 5, 2, &path)
+            .await
+            .unwrap();
 
         assert_eq!(count, 3);
         assert_eq!(client.request_count(rpc_url), 3);
@@ -944,17 +907,10 @@ mod tests {
 
         client.set_response(rpc_url, Ok(rpc_response(serde_json::json!([]))));
 
-        let count = scrape_exchange_with_client(
-            &client,
-            rpc_url,
-            CTF_EXCHANGE_V2,
-            10,
-            20,
-            5,
-            &path,
-        )
-        .await
-        .unwrap();
+        let count =
+            scrape_exchange_with_client(&client, rpc_url, CTF_EXCHANGE_V2, 10, 20, 5, &path)
+                .await
+                .unwrap();
 
         assert_eq!(count, 0);
         assert!(!path.exists());
@@ -975,13 +931,15 @@ mod tests {
 
         let app = Router::new().route(
             "/",
-            post(move |AxumJson(req): AxumJson<serde_json::Value>| async move {
-                AxumJson(serde_json::json!({
-                    "jsonrpc": "2.0",
-                    "id": req.get("id").cloned().unwrap_or(1.into()),
-                    "result": result,
-                }))
-            }),
+            post(
+                move |AxumJson(req): AxumJson<serde_json::Value>| async move {
+                    AxumJson(serde_json::json!({
+                        "jsonrpc": "2.0",
+                        "id": req.get("id").cloned().unwrap_or(1.into()),
+                        "result": result,
+                    }))
+                },
+            ),
         );
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
@@ -993,7 +951,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_receipt_logs_wrapper() {
-        let _ = tracing_subscriber::fmt().with_max_level(tracing::Level::INFO).try_init();
+        let _ = tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::INFO)
+            .try_init();
         let (port, handle) = spawn_rpc_server(serde_json::json!({
             "logs": [sample_log()],
         }))
@@ -1011,7 +971,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_scrape_exchange_wrapper_full() {
-        let _ = tracing_subscriber::fmt().with_max_level(tracing::Level::INFO).try_init();
+        let _ = tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::INFO)
+            .try_init();
         let (port, handle) = spawn_rpc_server(serde_json::json!([sample_log()])).await;
 
         let dir = tempdir().unwrap();
@@ -1040,7 +1002,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_scrape_exchange_wrapper_empty() {
-        let _ = tracing_subscriber::fmt().with_max_level(tracing::Level::INFO).try_init();
+        let _ = tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::INFO)
+            .try_init();
         let (port, handle) = spawn_rpc_server(serde_json::json!([])).await;
 
         let dir = tempdir().unwrap();
