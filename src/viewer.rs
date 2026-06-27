@@ -140,7 +140,10 @@ struct LocalMarketData {
 /// assert_eq!(parse_f64(None), None);
 /// ```
 fn parse_f64(v: Option<&serde_json::Value>) -> Option<f64> {
-    v.and_then(|v| v.as_f64().or_else(|| v.as_str().and_then(|s| s.parse().ok())))
+    v.and_then(|v| {
+        v.as_f64()
+            .or_else(|| v.as_str().and_then(|s| s.parse().ok()))
+    })
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -230,8 +233,7 @@ fn load_data(path: &Path) -> Result<ViewerData> {
                     "book" => {
                         // Only process if we haven't seen this timestamp before.
                         if entry.seen_ts.insert(ev.timestamp) {
-                            if let Ok(raw_msg) =
-                                serde_json::from_str::<serde_json::Value>(&ev.raw)
+                            if let Ok(raw_msg) = serde_json::from_str::<serde_json::Value>(&ev.raw)
                             {
                                 let bids = raw_msg
                                     .get("bids")
@@ -284,14 +286,20 @@ fn load_data(path: &Path) -> Result<ViewerData> {
 
                         // Fallback: parse side from raw if not already extracted by collector.
                         let side = ev.side.clone().or_else(|| {
-                            raw_json.as_ref()
-                                .and_then(|v| v.get("side").and_then(|s| s.as_str()).map(|s| s.to_string()))
+                            raw_json.as_ref().and_then(|v| {
+                                v.get("side")
+                                    .and_then(|s| s.as_str())
+                                    .map(|s| s.to_string())
+                            })
                         });
 
                         // Extract transaction hash from raw for on-chain lookup.
                         // The WebSocket last_trade_price event includes this field.
-                        let tx_hash = raw_json
-                            .and_then(|v| v.get("transaction_hash").and_then(|t| t.as_str()).map(|s| s.to_string()));
+                        let tx_hash = raw_json.and_then(|v| {
+                            v.get("transaction_hash")
+                                .and_then(|t| t.as_str())
+                                .map(|s| s.to_string())
+                        });
 
                         entry.trades.push(TradePoint {
                             timestamp: ev.timestamp,
@@ -647,7 +655,9 @@ async fn serve(
     listener: tokio::net::TcpListener,
     shutdown: impl Future<Output = ()> + Send + 'static,
 ) -> Result<()> {
-    axum::serve(listener, app).with_graceful_shutdown(shutdown).await?;
+    axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown)
+        .await?;
     Ok(())
 }
 
@@ -679,7 +689,13 @@ pub async fn run_with_shutdown(
         .await
         .expect("spawn_blocking failed")?;
 
-    run_with_app(data, tokio::net::TcpListener::bind(bind).await?, rpc_url, shutdown).await
+    run_with_app(
+        data,
+        tokio::net::TcpListener::bind(bind).await?,
+        rpc_url,
+        shutdown,
+    )
+    .await
 }
 
 /// Start the axum web viewer server.
@@ -687,14 +703,9 @@ pub async fn run_with_shutdown(
 /// This is a thin wrapper around [`run_with_shutdown`] that uses
 /// `tokio::signal::ctrl_c()` as the shutdown signal.
 pub async fn run(input_path: &Path, bind: &str, rpc_url: Option<String>) -> Result<()> {
-    run_with_shutdown(
-        input_path,
-        bind,
-        rpc_url,
-        async {
-            let _ = tokio::signal::ctrl_c().await;
-        },
-    )
+    run_with_shutdown(input_path, bind, rpc_url, async {
+        let _ = tokio::signal::ctrl_c().await;
+    })
     .await
 }
 
@@ -942,7 +953,10 @@ mod tests {
         mv.book_snapshots.push((
             1000,
             BookSnapshot {
-                bids: vec![Level { price: 0.1, size: 1.0 }],
+                bids: vec![Level {
+                    price: 0.1,
+                    size: 1.0,
+                }],
                 asks: vec![],
             },
         ));
@@ -976,8 +990,7 @@ mod tests {
         data.markets.insert("0xA".to_string(), mv);
 
         let state = test_state_with_data(data);
-        let Json(trades) =
-            trades_handler(State(state.clone()), AxumPath("0xA".to_string())).await;
+        let Json(trades) = trades_handler(State(state.clone()), AxumPath("0xA".to_string())).await;
         assert_eq!(trades.len(), 1);
 
         let Json(empty) = trades_handler(State(state), AxumPath("missing".to_string())).await;
@@ -1108,10 +1121,7 @@ mod tests {
     async fn test_trade_detail_mocked_http() {
         let client = Arc::new(InMemoryHttpClient::new());
         let rpc_url = "https://polygon-rpc.com";
-        client.set_response(
-            rpc_url,
-            Ok(rpc_response(json!({ "logs": [sample_log()] }))),
-        );
+        client.set_response(rpc_url, Ok(rpc_response(json!({ "logs": [sample_log()] }))));
 
         let state = AppState {
             data: Arc::new(RwLock::new(ViewerData::default())),
@@ -1120,11 +1130,15 @@ mod tests {
             tx_cache: Arc::new(RwLock::new(HashMap::new())),
         };
 
-        let tx_hash = "0x5e5fe7c64a30b1d23366bf508ea288b994e3b3d8d5afd5facd991af8551dae02".to_string();
+        let tx_hash =
+            "0x5e5fe7c64a30b1d23366bf508ea288b994e3b3d8d5afd5facd991af8551dae02".to_string();
         let Json(result1) =
             trade_detail_handler(State(state.clone()), AxumPath(tx_hash.clone())).await;
         assert!(result1.is_some());
-        assert_eq!(result1.as_ref().unwrap().maker, "0x448861155279dbf833d041b963e3ac854599e319");
+        assert_eq!(
+            result1.as_ref().unwrap().maker,
+            "0x448861155279dbf833d041b963e3ac854599e319"
+        );
 
         // Second call should hit the cache.
         let Json(result2) = trade_detail_handler(State(state.clone()), AxumPath(tx_hash)).await;
@@ -1163,7 +1177,10 @@ mod tests {
         mv.book_snapshots.push((
             1000,
             BookSnapshot {
-                bids: vec![Level { price: 0.1, size: 1.0 }],
+                bids: vec![Level {
+                    price: 0.1,
+                    size: 1.0,
+                }],
                 asks: vec![],
             },
         ));
@@ -1183,10 +1200,7 @@ mod tests {
 
         let client = InMemoryHttpClient::new();
         let rpc_url = "https://polygon-rpc.com";
-        client.set_response(
-            rpc_url,
-            Ok(rpc_response(json!({ "logs": [sample_log()] }))),
-        );
+        client.set_response(rpc_url, Ok(rpc_response(json!({ "logs": [sample_log()] }))));
 
         let state = AppState {
             data: Arc::new(RwLock::new(data)),
@@ -1339,7 +1353,9 @@ mod tests {
             data,
             listener,
             Some("https://polygon-rpc.com".to_string()),
-            async { shutdown_rx.await.ok(); },
+            async {
+                shutdown_rx.await.ok();
+            },
         )
         .await
         .unwrap();
@@ -1381,7 +1397,9 @@ mod tests {
                 &path,
                 &bind,
                 Some("https://polygon-rpc.com".to_string()),
-                async { shutdown_rx.await.ok(); },
+                async {
+                    shutdown_rx.await.ok();
+                },
             )
             .await
             .unwrap();
@@ -1422,7 +1440,9 @@ mod tests {
             &path,
             &bind,
             Some("https://polygon-rpc.com".to_string()),
-            async { shutdown_rx.await.ok(); },
+            async {
+                shutdown_rx.await.ok();
+            },
         )
         .await
         .unwrap();

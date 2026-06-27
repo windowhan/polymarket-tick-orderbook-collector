@@ -154,12 +154,7 @@ impl InMemoryHttpClient {
     }
 
     pub fn request_count(&self, url: &str) -> usize {
-        self.counts
-            .lock()
-            .unwrap()
-            .get(url)
-            .copied()
-            .unwrap_or(0)
+        self.counts.lock().unwrap().get(url).copied().unwrap_or(0)
     }
 
     pub fn total_request_count(&self) -> usize {
@@ -209,11 +204,31 @@ mod tests {
 
     #[test]
     fn test_http_response_is_success() {
-        assert!(HttpResponse { status: 200, body: "".to_string() }.is_success());
-        assert!(HttpResponse { status: 299, body: "".to_string() }.is_success());
-        assert!(!HttpResponse { status: 199, body: "".to_string() }.is_success());
-        assert!(!HttpResponse { status: 300, body: "".to_string() }.is_success());
-        assert!(!HttpResponse { status: 500, body: "".to_string() }.is_success());
+        assert!(HttpResponse {
+            status: 200,
+            body: "".to_string()
+        }
+        .is_success());
+        assert!(HttpResponse {
+            status: 299,
+            body: "".to_string()
+        }
+        .is_success());
+        assert!(!HttpResponse {
+            status: 199,
+            body: "".to_string()
+        }
+        .is_success());
+        assert!(!HttpResponse {
+            status: 300,
+            body: "".to_string()
+        }
+        .is_success());
+        assert!(!HttpResponse {
+            status: 500,
+            body: "".to_string()
+        }
+        .is_success());
     }
 
     #[test]
@@ -259,8 +274,14 @@ mod tests {
         client.set_response_sequence(
             "http://example.com",
             vec![
-                Ok(HttpResponse { status: 200, body: "first".to_string() }),
-                Ok(HttpResponse { status: 201, body: "second".to_string() }),
+                Ok(HttpResponse {
+                    status: 200,
+                    body: "first".to_string(),
+                }),
+                Ok(HttpResponse {
+                    status: 201,
+                    body: "second".to_string(),
+                }),
             ],
         );
 
@@ -292,7 +313,10 @@ mod tests {
         tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
 
         let client = ReqwestHttpClient::new();
-        let resp = client.get(&format!("http://127.0.0.1:{}/", port)).await.unwrap();
+        let resp = client
+            .get(&format!("http://127.0.0.1:{}/", port))
+            .await
+            .unwrap();
         assert_eq!(resp.status, 200);
         assert_eq!(resp.body, "hello\n");
     }
@@ -301,16 +325,16 @@ mod tests {
     async fn test_reqwest_http_client_post() {
         use axum::{routing::post, Router};
 
-        let app = Router::new().route(
-            "/",
-            post(|_body: String| async { "ok" }),
-        );
+        let app = Router::new().route("/", post(|_body: String| async { "ok" }));
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
         tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
 
         let client = ReqwestHttpClient::new();
-        let resp = client.post(&format!("http://127.0.0.1:{}/", port), "{}".to_string()).await.unwrap();
+        let resp = client
+            .post(&format!("http://127.0.0.1:{}/", port), "{}".to_string())
+            .await
+            .unwrap();
         assert_eq!(resp.status, 200);
         assert_eq!(resp.body, "ok");
     }
@@ -335,7 +359,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_raw_reqwest_client_as_http_client() {
-        use axum::{routing::{get, post}, Router};
+        use axum::{
+            routing::{get, post},
+            Router,
+        };
 
         let app = Router::new()
             .route("/", get(|| async { "raw-get" }))
@@ -345,11 +372,19 @@ mod tests {
         tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
 
         let raw = reqwest::Client::new();
-        let resp = HttpClient::get(&raw, &format!("http://127.0.0.1:{}/", port)).await.unwrap();
+        let resp = HttpClient::get(&raw, &format!("http://127.0.0.1:{}/", port))
+            .await
+            .unwrap();
         assert_eq!(resp.status, 200);
         assert_eq!(resp.body, "raw-get");
 
-        let resp = HttpClient::post(&raw, &format!("http://127.0.0.1:{}/", port), "{}".to_string()).await.unwrap();
+        let resp = HttpClient::post(
+            &raw,
+            &format!("http://127.0.0.1:{}/", port),
+            "{}".to_string(),
+        )
+        .await
+        .unwrap();
         assert_eq!(resp.status, 200);
         assert_eq!(resp.body, "raw-post");
     }
@@ -375,7 +410,13 @@ mod tests {
     #[test]
     fn test_in_memory_http_client_default_and_clone() {
         let client1 = InMemoryHttpClient::default();
-        client1.set_response("http://x", Ok(HttpResponse { status: 200, body: "x".to_string() }));
+        client1.set_response(
+            "http://x",
+            Ok(HttpResponse {
+                status: 200,
+                body: "x".to_string(),
+            }),
+        );
         let client2 = client1.clone();
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async {

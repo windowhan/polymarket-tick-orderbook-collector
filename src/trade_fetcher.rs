@@ -98,10 +98,7 @@ pub async fn fetch_trades(
 
 /// Backfill all historical trades for a single asset.
 /// Data API /trades limit is 200/10s → sleep 55 ms between calls.
-pub async fn backfill_trades_for_asset(
-    client: &dyn HttpClient,
-    asset: &str,
-) -> Result<Vec<Trade>> {
+pub async fn backfill_trades_for_asset(client: &dyn HttpClient, asset: &str) -> Result<Vec<Trade>> {
     let mut all_trades = Vec::new();
     let mut offset = 0usize;
     let limit = 500;
@@ -123,7 +120,10 @@ pub async fn backfill_trades_for_asset(
             Err(e) => {
                 let root = e.root_cause().to_string();
                 if root.contains("max historical activity offset") {
-                    info!(asset, offset, "Reached max historical offset, stopping backfill");
+                    info!(
+                        asset,
+                        offset, "Reached max historical offset, stopping backfill"
+                    );
                     break;
                 }
                 warn!(asset, offset, error = %e, "Trade fetch failed, retrying after delay");
@@ -231,10 +231,8 @@ mod tests {
     async fn test_backfill_pagination() {
         let client = InMemoryHttpClient::new();
         let asset = "0xasset";
-        let first: Vec<serde_json::Value> =
-            (0..500).map(|i| trade_json(asset, i)).collect();
-        let second: Vec<serde_json::Value> =
-            (500..750).map(|i| trade_json(asset, i)).collect();
+        let first: Vec<serde_json::Value> = (0..500).map(|i| trade_json(asset, i)).collect();
+        let second: Vec<serde_json::Value> = (500..750).map(|i| trade_json(asset, i)).collect();
 
         client.set_response(&trades_url(asset, 500, 0), Ok(ok_trades(first)));
         client.set_response(&trades_url(asset, 500, 500), Ok(ok_trades(second)));
@@ -280,10 +278,7 @@ mod tests {
     async fn test_fetch_trades_network_error() {
         let client = InMemoryHttpClient::new();
         let asset = "0xasset";
-        client.set_response(
-            &trades_url(asset, 10, 0),
-            Err("connection refused".into()),
-        );
+        client.set_response(&trades_url(asset, 10, 0), Err("connection refused".into()));
 
         let err = fetch_trades(&client, asset, 10, 0).await.unwrap_err();
         assert!(err.to_string().contains("Failed to fetch trades"));
@@ -309,8 +304,7 @@ mod tests {
     async fn test_backfill_full_page_then_max_offset() {
         let client = InMemoryHttpClient::new();
         let asset = "0xasset";
-        let first: Vec<serde_json::Value> =
-            (0..500).map(|i| trade_json(asset, i)).collect();
+        let first: Vec<serde_json::Value> = (0..500).map(|i| trade_json(asset, i)).collect();
         client.set_response(&trades_url(asset, 500, 0), Ok(ok_trades(first)));
         client.set_response(
             &trades_url(asset, 500, 500),
@@ -330,10 +324,8 @@ mod tests {
             tracing::dispatcher::set_default(&tracing::dispatcher::Dispatch::new(subscriber));
         let client = InMemoryHttpClient::new();
         let asset = "0xasset";
-        let first: Vec<serde_json::Value> =
-            (0..500).map(|i| trade_json(asset, i)).collect();
-        let second: Vec<serde_json::Value> =
-            (500..750).map(|i| trade_json(asset, i)).collect();
+        let first: Vec<serde_json::Value> = (0..500).map(|i| trade_json(asset, i)).collect();
+        let second: Vec<serde_json::Value> = (500..750).map(|i| trade_json(asset, i)).collect();
 
         client.set_response(&trades_url(asset, 500, 0), Ok(ok_trades(first)));
         client.set_response(&trades_url(asset, 500, 500), Ok(ok_trades(second)));

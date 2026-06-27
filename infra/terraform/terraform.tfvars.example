@@ -36,7 +36,7 @@ region = "us-east-1"
 # SSH key pair name
 key_name = "your-key-pair"
 
-# S3 bucket for binary, markets.jsonl, and collector rotated output files.
+# S3 bucket for binary artifacts and collector rotated output files.
 s3_bucket = "your-polymarket-collector-bucket"
 
 # S3 prefix for collector rotated files.

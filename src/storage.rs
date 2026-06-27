@@ -47,9 +47,14 @@ pub async fn append_jsonl<T: Serialize>(path: &Path, records: &[T]) -> Result<()
     if let Some(parent) = path.parent() {
         tokio::fs::create_dir_all(parent).await?;
     }
-    let mut file = tokio::fs::OpenOptions::new().create(true).append(true).open(path).await?;
+    let mut file = tokio::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .await?;
     for record in records {
-        file.write_all(serde_json::to_string(record)?.as_bytes()).await?;
+        file.write_all(serde_json::to_string(record)?.as_bytes())
+            .await?;
         file.write_all(b"\n").await?;
     }
     file.flush().await?;
@@ -61,9 +66,15 @@ pub async fn write_jsonl<T: Serialize>(path: &Path, records: &[T]) -> Result<()>
     if let Some(parent) = path.parent() {
         tokio::fs::create_dir_all(parent).await?;
     }
-    let mut file = tokio::fs::OpenOptions::new().create(true).write(true).truncate(true).open(path).await?;
+    let mut file = tokio::fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(true)
+        .open(path)
+        .await?;
     for record in records {
-        file.write_all(serde_json::to_string(record)?.as_bytes()).await?;
+        file.write_all(serde_json::to_string(record)?.as_bytes())
+            .await?;
         file.write_all(b"\n").await?;
     }
     file.flush().await?;
@@ -115,14 +126,20 @@ impl RotatedWriter {
     pub(crate) async fn rotate_to(&mut self, window: DateTime<Utc>) -> Result<()> {
         if let Some(current_window) = self.current_window.take() {
             let prev_path = self.window_path(current_window);
-            if let Some(mut file) = self.current_file.take() { file.flush().await?; }
+            if let Some(mut file) = self.current_file.take() {
+                file.flush().await?;
+            }
             self.rotated_path = Some(prev_path);
         }
         let path = self.window_path(window);
         if let Some(parent) = path.parent() {
             tokio::fs::create_dir_all(parent).await?;
         }
-        let file = tokio::fs::OpenOptions::new().create(true).append(true).open(&path).await?;
+        let file = tokio::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&path)
+            .await?;
         self.current_file = Some(file);
         self.current_window = Some(window);
         Ok(())
@@ -133,10 +150,14 @@ impl RotatedWriter {
         if records.is_empty() {
             return Ok(());
         }
-        let window = floor_time(Utc::now(), self.rotate_interval); if self.current_window != Some(window) { self.rotate_to(window).await?; }
+        let window = floor_time(Utc::now(), self.rotate_interval);
+        if self.current_window != Some(window) {
+            self.rotate_to(window).await?;
+        }
         let file = self.current_file.as_mut().expect("file initialized");
         for record in records {
-            file.write_all(serde_json::to_string(record)?.as_bytes()).await?;
+            file.write_all(serde_json::to_string(record)?.as_bytes())
+                .await?;
             file.write_all(b"\n").await?;
         }
         file.flush().await?;
@@ -145,7 +166,9 @@ impl RotatedWriter {
 
     /// Explicitly flush and close the current file.
     pub async fn flush(&mut self) -> Result<()> {
-        if let Some(file) = self.current_file.as_mut() { file.flush().await?; }
+        if let Some(file) = self.current_file.as_mut() {
+            file.flush().await?;
+        }
         Ok(())
     }
 
@@ -217,7 +240,8 @@ mod tests {
     #[tokio::test]
     async fn test_rotated_writer_exposes_rotated_path() {
         let dir = tempdir().unwrap();
-        let mut writer = RotatedWriter::new(dir.path().to_path_buf(), "_w0", Duration::from_secs(60));
+        let mut writer =
+            RotatedWriter::new(dir.path().to_path_buf(), "_w0", Duration::from_secs(60));
 
         writer.append(&[Rec { v: 1 }]).await.unwrap();
         let first_path = writer.current_path().unwrap().clone();
@@ -328,7 +352,9 @@ mod tests {
             .unwrap()
             .with_timezone(&Utc);
         let path = writer.window_path(ts);
-        assert!(path.to_string_lossy().contains("2025-06-08/12/12_05_w.jsonl"));
+        assert!(path
+            .to_string_lossy()
+            .contains("2025-06-08/12/12_05_w.jsonl"));
     }
 
     #[tokio::test]

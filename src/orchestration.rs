@@ -45,6 +45,43 @@ struct RegisterResponse {
 struct AssignmentResponse {
     token_ids: Vec<String>,
     chunk_size: usize,
+    #[serde(default)]
+    version: u64,
+}
+
+/// Versioned token assignment returned by the aggregator.
+///
+/// # Detailed Description
+/// The aggregator includes a monotonically increasing `version` so collectors
+/// can skip subscription diff work when their assignment has not changed. The
+/// token list remains the source of truth for correctness; the version is only
+/// a cheap change detector.
+///
+/// # Arguments
+/// Values are returned by [`OrchestrationClient::fetch_assignment_snapshot`].
+///
+/// # Returns
+/// A cloneable assignment containing token IDs, recommended chunk size, and
+/// assignment version.
+///
+/// # Example — Input / Output
+/// ```rust,ignore
+/// let assignment = client.fetch_assignment_snapshot().await?;
+/// assert_eq!(assignment.version, 2);
+/// assert_eq!(assignment.token_ids, vec!["token-a".to_string()]);
+/// # anyhow::Ok(())
+/// ```
+///
+/// # Related
+/// - [`OrchestrationClient::fetch_assignment_snapshot`]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AssignmentSnapshot {
+    /// Token IDs assigned to this collector.
+    pub token_ids: Vec<String>,
+    /// Recommended number of token IDs per WebSocket worker.
+    pub chunk_size: usize,
+    /// Aggregator assignment version for cheap change detection.
+    pub version: u64,
 }
 
 /// Request body for S3 upload notification.
@@ -118,8 +155,34 @@ impl OrchestrationClient {
         &self.collector_id
     }
 
-    /// Fetch the current token assignment from the aggregator.
-    pub async fn fetch_assignment(&self) -> Result<(Vec<String>, usize)> {
+    /// Fetch the current versioned token assignment from the aggregator.
+    ///
+    /// # Detailed Description
+    /// This method calls `/assignment/{collector_id}` and parses the token IDs,
+    /// chunk size, and assignment `version`. Older aggregators that omit
+    /// `version` deserialize as version `0`, allowing backward-compatible tests
+    /// while newer collectors use the version to avoid unnecessary subscription
+    /// updates.
+    ///
+    /// # Arguments
+    /// This method has no arguments; it uses the client base URL and registered
+    /// collector ID.
+    ///
+    /// # Returns
+    /// A [`AssignmentSnapshot`] on success, or an error when the request,
+    /// response status, or JSON body is invalid.
+    ///
+    /// # Example — Input / Output
+    /// ```rust,ignore
+    /// let assignment = client.fetch_assignment_snapshot().await?;
+    /// assert_eq!(assignment.chunk_size, 100);
+    /// assert!(assignment.version >= 1);
+    /// # anyhow::Ok(())
+    /// ```
+    ///
+    /// # Related
+    /// - [`AssignmentSnapshot`]
+    pub async fn fetch_assignment_snapshot(&self) -> Result<AssignmentSnapshot> {
         let url = format!("{}/assignment/{}", self.base_url, self.collector_id);
         let response = self
             .http_client
@@ -135,7 +198,45 @@ impl OrchestrationClient {
             .json()
             .context("Failed to parse assignment response")?;
 
-        Ok((body.token_ids, body.chunk_size))
+        Ok(AssignmentSnapshot {
+            token_ids: body.token_ids,
+            chunk_size: body.chunk_size,
+            version: body.version,
+        })
+    }
+
+    /// Fetch the current token assignment from the aggregator.
+    ///
+    /// # Detailed Description
+    /// This compatibility wrapper preserves the older `(token_ids, chunk_size)`
+    /// return shape for callers that do not yet need assignment-version polling.
+    /// New dynamic collectors should prefer [`fetch_assignment_snapshot`](Self::fetch_assignment_snapshot)
+    /// so they can distinguish unchanged empty responses from versioned empty
+    /// assignments that require unsubscribe diffs.
+    ///
+    /// # Arguments
+    /// This method has no arguments; it uses the client base URL and collector ID
+    /// captured during registration.
+    ///
+    /// # Returns
+    /// A tuple of assigned token IDs and recommended chunk size, or an error when
+    /// the request fails, the aggregator returns a non-success status, or the JSON
+    /// response cannot be parsed.
+    ///
+    /// # Example — Input / Output
+    /// ```rust,ignore
+    /// let (token_ids, chunk_size) = client.fetch_assignment().await?;
+    /// assert_eq!(chunk_size, 100);
+    /// assert_eq!(token_ids, vec!["token-a".to_string()]);
+    /// # anyhow::Ok(())
+    /// ```
+    ///
+    /// # Related
+    /// - [`OrchestrationClient::fetch_assignment_snapshot`]
+    /// - [`AssignmentSnapshot`]
+    pub async fn fetch_assignment(&self) -> Result<(Vec<String>, usize)> {
+        let assignment = self.fetch_assignment_snapshot().await?;
+        Ok((assignment.token_ids, assignment.chunk_size))
     }
 
     /// Send a heartbeat to the aggregator.
@@ -238,13 +339,10 @@ mod tests {
             Err("connection refused".to_string()),
         );
 
-        let err = OrchestrationClient::register_with_client(
-            Arc::new(client),
-            base.to_string(),
-            None,
-        )
-        .await
-        .unwrap_err();
+        let err =
+            OrchestrationClient::register_with_client(Arc::new(client), base.to_string(), None)
+                .await
+                .unwrap_err();
 
         assert!(err.to_string().contains("Failed to register"));
     }
@@ -253,15 +351,15 @@ mod tests {
     async fn test_register_non_success_status() {
         let client = InMemoryHttpClient::new();
         let base = "http://aggregator";
-        client.set_response(&format!("{}/register", base), Ok(error_response(409, "conflict")));
+        client.set_response(
+            &format!("{}/register", base),
+            Ok(error_response(409, "conflict")),
+        );
 
-        let err = OrchestrationClient::register_with_client(
-            Arc::new(client),
-            base.to_string(),
-            None,
-        )
-        .await
-        .unwrap_err();
+        let err =
+            OrchestrationClient::register_with_client(Arc::new(client), base.to_string(), None)
+                .await
+                .unwrap_err();
 
         assert!(err.to_string().contains("Registration failed"));
     }
@@ -278,15 +376,14 @@ mod tests {
             }),
         );
 
-        let err = OrchestrationClient::register_with_client(
-            Arc::new(client),
-            base.to_string(),
-            None,
-        )
-        .await
-        .unwrap_err();
+        let err =
+            OrchestrationClient::register_with_client(Arc::new(client), base.to_string(), None)
+                .await
+                .unwrap_err();
 
-        assert!(err.to_string().contains("Failed to parse register response"));
+        assert!(err
+            .to_string()
+            .contains("Failed to parse register response"));
     }
 
     #[tokio::test]
@@ -298,18 +395,38 @@ mod tests {
             Ok(ok_json(serde_json::json!({
                 "token_ids": ["a", "b"],
                 "chunk_size": 50,
+                "version": 7,
             }))),
         );
 
-        let orch = OrchestrationClient::with_client(
-            base.to_string(),
-            "cid".to_string(),
-            Arc::new(client),
-        );
+        let orch =
+            OrchestrationClient::with_client(base.to_string(), "cid".to_string(), Arc::new(client));
 
         let (tokens, chunk_size) = orch.fetch_assignment().await.unwrap();
         assert_eq!(tokens, vec!["a", "b"]);
         assert_eq!(chunk_size, 50);
+    }
+
+    #[tokio::test]
+    async fn test_fetch_assignment_snapshot_success_with_version() {
+        let client = InMemoryHttpClient::new();
+        let base = "http://aggregator";
+        client.set_response(
+            &format!("{}/assignment/cid", base),
+            Ok(ok_json(serde_json::json!({
+                "token_ids": ["a", "b"],
+                "chunk_size": 50,
+                "version": 7,
+            }))),
+        );
+
+        let orch =
+            OrchestrationClient::with_client(base.to_string(), "cid".to_string(), Arc::new(client));
+
+        let assignment = orch.fetch_assignment_snapshot().await.unwrap();
+        assert_eq!(assignment.token_ids, vec!["a", "b"]);
+        assert_eq!(assignment.chunk_size, 50);
+        assert_eq!(assignment.version, 7);
     }
 
     #[tokio::test]
@@ -321,11 +438,8 @@ mod tests {
             Ok(error_response(500, "down")),
         );
 
-        let orch = OrchestrationClient::with_client(
-            base.to_string(),
-            "cid".to_string(),
-            Arc::new(client),
-        );
+        let orch =
+            OrchestrationClient::with_client(base.to_string(), "cid".to_string(), Arc::new(client));
 
         let err = orch.fetch_assignment().await.unwrap_err();
         assert!(err.to_string().contains("Assignment fetch failed"));
@@ -340,11 +454,8 @@ mod tests {
             Err("network unreachable".to_string()),
         );
 
-        let orch = OrchestrationClient::with_client(
-            base.to_string(),
-            "cid".to_string(),
-            Arc::new(client),
-        );
+        let orch =
+            OrchestrationClient::with_client(base.to_string(), "cid".to_string(), Arc::new(client));
 
         let err = orch.fetch_assignment().await.unwrap_err();
         assert!(err.to_string().contains("Failed to fetch assignment"));
@@ -354,13 +465,13 @@ mod tests {
     async fn test_send_heartbeat_success() {
         let client = InMemoryHttpClient::new();
         let base = "http://aggregator";
-        client.set_response(&format!("{}/heartbeat/cid", base), Ok(ok_json(serde_json::json!({}))));
-
-        let orch = OrchestrationClient::with_client(
-            base.to_string(),
-            "cid".to_string(),
-            Arc::new(client),
+        client.set_response(
+            &format!("{}/heartbeat/cid", base),
+            Ok(ok_json(serde_json::json!({}))),
         );
+
+        let orch =
+            OrchestrationClient::with_client(base.to_string(), "cid".to_string(), Arc::new(client));
 
         orch.send_heartbeat().await.unwrap();
     }
@@ -374,11 +485,8 @@ mod tests {
             Ok(error_response(503, "unavailable")),
         );
 
-        let orch = OrchestrationClient::with_client(
-            base.to_string(),
-            "cid".to_string(),
-            Arc::new(client),
-        );
+        let orch =
+            OrchestrationClient::with_client(base.to_string(), "cid".to_string(), Arc::new(client));
 
         let err = orch.send_heartbeat().await.unwrap_err();
         assert!(err.to_string().contains("Heartbeat failed"));
@@ -393,11 +501,8 @@ mod tests {
             Err("connection reset".to_string()),
         );
 
-        let orch = OrchestrationClient::with_client(
-            base.to_string(),
-            "cid".to_string(),
-            Arc::new(client),
-        );
+        let orch =
+            OrchestrationClient::with_client(base.to_string(), "cid".to_string(), Arc::new(client));
 
         let err = orch.send_heartbeat().await.unwrap_err();
         assert!(err.to_string().contains("Failed to send heartbeat"));
@@ -407,31 +512,27 @@ mod tests {
     async fn test_notify_s3_success() {
         let client = InMemoryHttpClient::new();
         let base = "http://aggregator";
-        client.set_response(&format!("{}/notify", base), Ok(ok_json(serde_json::json!({}))));
-
-        let orch = OrchestrationClient::with_client(
-            base.to_string(),
-            "cid".to_string(),
-            Arc::new(client),
+        client.set_response(
+            &format!("{}/notify", base),
+            Ok(ok_json(serde_json::json!({}))),
         );
 
-        orch.notify_s3("bucket", "orderbook/key.jsonl").await.unwrap();
+        let orch =
+            OrchestrationClient::with_client(base.to_string(), "cid".to_string(), Arc::new(client));
+
+        orch.notify_s3("bucket", "orderbook/key.jsonl")
+            .await
+            .unwrap();
     }
 
     #[tokio::test]
     async fn test_notify_s3_non_success_status() {
         let client = InMemoryHttpClient::new();
         let base = "http://aggregator";
-        client.set_response(
-            &format!("{}/notify", base),
-            Ok(error_response(500, "down")),
-        );
+        client.set_response(&format!("{}/notify", base), Ok(error_response(500, "down")));
 
-        let orch = OrchestrationClient::with_client(
-            base.to_string(),
-            "cid".to_string(),
-            Arc::new(client),
-        );
+        let orch =
+            OrchestrationClient::with_client(base.to_string(), "cid".to_string(), Arc::new(client));
 
         let err = orch.notify_s3("bucket", "key").await.unwrap_err();
         assert!(err.to_string().contains("Notify failed"));
@@ -441,16 +542,10 @@ mod tests {
     async fn test_notify_s3_http_error() {
         let client = InMemoryHttpClient::new();
         let base = "http://aggregator";
-        client.set_response(
-            &format!("{}/notify", base),
-            Err("timeout".to_string()),
-        );
+        client.set_response(&format!("{}/notify", base), Err("timeout".to_string()));
 
-        let orch = OrchestrationClient::with_client(
-            base.to_string(),
-            "cid".to_string(),
-            Arc::new(client),
-        );
+        let orch =
+            OrchestrationClient::with_client(base.to_string(), "cid".to_string(), Arc::new(client));
 
         let err = orch.notify_s3("bucket", "key").await.unwrap_err();
         assert!(err.to_string().contains("Failed to notify aggregator"));
@@ -474,17 +569,10 @@ mod tests {
         let mock = Arc::new(InMemoryHttpClient::new());
         let base = "http://aggregator";
         let url = format!("{}/heartbeat/cid", base);
-        mock.set_response(
-            &url,
-            Ok(error_response(503, "unavailable")),
-        );
+        mock.set_response(&url, Ok(error_response(503, "unavailable")));
 
         let client: Arc<dyn HttpClient> = mock.clone();
-        let orch = OrchestrationClient::with_client(
-            base.to_string(),
-            "cid".to_string(),
-            client,
-        );
+        let orch = OrchestrationClient::with_client(base.to_string(), "cid".to_string(), client);
 
         let handle = orch.spawn_heartbeat_task(Duration::from_secs(1));
         tokio::task::yield_now().await;
@@ -511,11 +599,7 @@ mod tests {
         );
 
         let client: Arc<dyn HttpClient> = mock.clone();
-        let orch = OrchestrationClient::with_client(
-            base.to_string(),
-            "cid".to_string(),
-            client,
-        );
+        let orch = OrchestrationClient::with_client(base.to_string(), "cid".to_string(), client);
 
         let handle = orch.spawn_heartbeat_task(Duration::from_secs(1));
         // Let the spawned task start up and fire its first immediate tick.
