@@ -1,9 +1,8 @@
-"""Greenfield v2 Orchestrator contract dataclasses.
+"""그린필드 v2 Orchestrator 계약 dataclass 모음입니다.
 
-These dataclasses implement architecture section 22.1 for the Python
-Orchestrator side.  They intentionally mirror the Rust contracts in
-``src/common/contracts.rs`` so that the Orchestrator and Collector can exchange
-JSON payloads without hidden translation rules.
+이 dataclass들은 Python Orchestrator 쪽에서 아키텍처 22.1절을 구현합니다.
+``src/common/contracts.rs``의 Rust 계약과 의도적으로 같은 의미와 JSON 값을 유지하여,
+Orchestrator와 Collector가 숨은 변환 규칙 없이 payload를 교환할 수 있게 합니다.
 """
 
 from __future__ import annotations
@@ -14,9 +13,9 @@ from typing import Optional
 
 
 class MarketLifecycleState(str, Enum):
-    """Lifecycle state assigned by the Market Universe Manager.
+    """Market Universe Manager가 부여하는 마켓 생명주기 상태입니다.
 
-    Example input/output:
+    입출력 예시:
         >>> MarketLifecycleState.ACTIVE.value
         'ACTIVE'
     """
@@ -30,10 +29,10 @@ class MarketLifecycleState(str, Enum):
 
 
 class ControlState(str, Enum):
-    """Global control state returned with assignments.
+    """배정과 함께 반환되는 전역 제어 상태입니다.
 
-    Collector processes must treat ``EMERGENCY_STOP_BY_BUDGET`` as higher
-    priority than normal assignment changes.
+    Collector 프로세스는 ``EMERGENCY_STOP_BY_BUDGET``을 일반 배정 변경보다
+    더 높은 우선순위로 처리해야 합니다.
     """
 
     RUNNING = "RUNNING"
@@ -43,7 +42,7 @@ class ControlState(str, Enum):
 
 
 class OrderbookEventType(str, Enum):
-    """Normalized event type written by Collectors to JSONL."""
+    """Collector가 JSONL에 기록하는 정규화된 이벤트 종류입니다."""
 
     BOOK = "book"
     PRICE_CHANGE = "price_change"
@@ -51,10 +50,10 @@ class OrderbookEventType(str, Enum):
 
 
 class HandoffMode(str, Enum):
-    """Mode for structural shard handoff.
+    """구조적 shard handoff에 사용할 방식입니다.
 
-    v1 does not use traffic-spike based hot-market moves; handoff is reserved
-    for structural movement such as failure recovery or operator-directed moves.
+    v1에서는 거래량 급증에 따른 hot-market 이동을 사용하지 않습니다. handoff는
+    장애 복구나 운영자 지시 이동처럼 구조적인 이동에만 예약합니다.
     """
 
     NONE = "NONE"
@@ -65,7 +64,7 @@ class HandoffMode(str, Enum):
 
 @dataclass(frozen=True)
 class MarketInfo:
-    """Normalized market metadata used by the assignment planner."""
+    """배정 planner가 사용하는 정규화된 마켓 메타데이터입니다."""
 
     market_id: str
     slug: str
@@ -81,7 +80,7 @@ class MarketInfo:
 
 @dataclass(frozen=True)
 class MarketUniverseSnapshot:
-    """Versioned snapshot of markets eligible for planning decisions."""
+    """계획 판단 대상 마켓을 담은 버전 관리 스냅샷입니다."""
 
     version: int
     generated_at_ms: int
@@ -90,7 +89,7 @@ class MarketUniverseSnapshot:
 
 @dataclass(frozen=True)
 class CollectorCapacity:
-    """Declared Collector capacity used to prevent over-assignment."""
+    """과배정을 막기 위해 Collector가 선언하는 처리 용량입니다."""
 
     max_market_subscriptions: int
     max_token_subscriptions: int
@@ -104,17 +103,17 @@ class CollectorCapacity:
         token_count: int,
         ws_connections: int,
     ) -> bool:
-        """Return whether planned counts fit this Collector's capacity.
+        """계획된 수치가 이 Collector의 용량 안에 들어오는지 반환합니다.
 
-        Args:
-            market_count: Number of markets planned for the Collector.
-            token_count: Number of CLOB tokens planned for the Collector.
-            ws_connections: Number of WebSocket connections expected.
+        인자:
+            market_count: Collector에 계획된 마켓 수입니다.
+            token_count: Collector에 계획된 CLOB 토큰 수입니다.
+            ws_connections: 예상 WebSocket 연결 수입니다.
 
-        Returns:
-            ``True`` only when all counts are within declared capacity.
+        반환값:
+            모든 수치가 선언 용량 이내일 때만 ``True``를 반환합니다.
 
-        Example input/output:
+        입출력 예시:
             >>> c = CollectorCapacity(2, 4, 1, None, 10)
             >>> c.fits_subscription_counts(2, 4, 1)
             True
@@ -131,7 +130,7 @@ class CollectorCapacity:
 
 @dataclass(frozen=True)
 class CollectorStatus:
-    """Runtime status reported by a Collector."""
+    """Collector가 보고하는 런타임 상태입니다."""
 
     collector_id: str
     assignment_version: int
@@ -147,12 +146,12 @@ class CollectorStatus:
     last_successful_upload_at_ms: Optional[int]
 
     def assignment_matches_subscription(self) -> bool:
-        """Return whether actual subscriptions match assigned counts.
+        """실제 구독 수가 배정 수와 일치하는지 반환합니다.
 
-        Returns:
-            ``True`` when market and token subscription counts match.
+        반환값:
+            마켓 수와 토큰 수가 모두 일치하면 ``True``를 반환합니다.
 
-        Example input/output:
+        입출력 예시:
             >>> s = CollectorStatus('c', 1, 1, 2, 1, 2, 1, 0.0, 0, 0, 0, None)
             >>> s.assignment_matches_subscription()
             True
@@ -166,7 +165,7 @@ class CollectorStatus:
 
 @dataclass(frozen=True)
 class AssignmentLimits:
-    """Per-assignment worker splitting limits sent to a Collector."""
+    """단일 배정과 함께 Collector에 전달하는 worker 분할 제한입니다."""
 
     max_ws_connections: int
     max_tokens_per_ws_connection: int
@@ -174,7 +173,7 @@ class AssignmentLimits:
 
 @dataclass(frozen=True)
 class HandoffAction:
-    """Planned structural handoff for token IDs."""
+    """token ID 묶음에 대해 계획된 구조적 handoff입니다."""
 
     token_ids: list[str]
     from_collector_id: Optional[str]
@@ -185,7 +184,7 @@ class HandoffAction:
 
 @dataclass(frozen=True)
 class CollectorAssignment:
-    """Assignment payload for one Collector."""
+    """단일 Collector에 대한 배정 payload입니다."""
 
     collector_id: str
     market_ids: list[str]
@@ -196,7 +195,7 @@ class CollectorAssignment:
 
 @dataclass(frozen=True)
 class AssignmentPlan:
-    """Versioned assignment plan for all Collectors."""
+    """모든 Collector에 대한 버전 관리 배정 계획입니다."""
 
     version: int
     universe_version: int
@@ -207,7 +206,7 @@ class AssignmentPlan:
 
 @dataclass(frozen=True)
 class ObjectNotification:
-    """Metadata for a GCS object uploaded by a Collector."""
+    """Collector가 업로드한 GCS object의 메타데이터입니다."""
 
     collector_id: str
     assignment_version: int
@@ -220,12 +219,12 @@ class ObjectNotification:
     checksum_crc32c: Optional[str]
 
     def idempotency_key(self) -> str:
-        """Return the object-level idempotency key.
+        """object 단위 멱등성 key를 반환합니다.
 
-        Returns:
-            A stable ``bucket/object_name#generation`` key.
+        반환값:
+            안정적인 ``bucket/object_name#generation`` key입니다.
 
-        Example input/output:
+        입출력 예시:
             >>> n = ObjectNotification('c', 1, 'b', 'o', 'g', 1, None, None, None)
             >>> n.idempotency_key()
             'b/o#g'
@@ -236,7 +235,7 @@ class ObjectNotification:
 
 @dataclass(frozen=True)
 class ProcessedObject:
-    """Durable record that a GCS object generation has been merged."""
+    """GCS object generation이 병합 완료되었음을 나타내는 영속 기록입니다."""
 
     bucket: str
     object_name: str
@@ -248,14 +247,14 @@ class ProcessedObject:
     output_path: str
 
     def idempotency_key(self) -> str:
-        """Return the object-level idempotency key used for duplicate skips."""
+        """중복 skip 판단에 사용하는 object 단위 멱등성 key를 반환합니다."""
 
         return f"{self.bucket}/{self.object_name}#{self.generation}"
 
 
 @dataclass(frozen=True)
 class BudgetPolicy:
-    """Configured budget thresholds for GCS cost guardrails."""
+    """GCS 비용 가드레일에 사용할 예산 임계값 설정입니다."""
 
     warning_threshold_usd: float
     hard_stop_threshold_usd: float
@@ -265,7 +264,7 @@ class BudgetPolicy:
 
 @dataclass(frozen=True)
 class BudgetState:
-    """Runtime budget state maintained by the Orchestrator."""
+    """Orchestrator가 유지하는 런타임 예산 상태입니다."""
 
     estimated_gcs_cost_usd: float
     uploaded_bytes: int
@@ -276,19 +275,19 @@ class BudgetState:
     control_state: ControlState
 
     def warning_exceeded(self, policy: BudgetPolicy) -> bool:
-        """Return whether the warning threshold has been crossed."""
+        """경고 임계값을 넘었는지 반환합니다."""
 
         return self.estimated_gcs_cost_usd >= policy.warning_threshold_usd
 
     def hard_stop_exceeded(self, policy: BudgetPolicy) -> bool:
-        """Return whether the hard stop threshold has been crossed."""
+        """강제 중단 임계값을 넘었는지 반환합니다."""
 
         return self.estimated_gcs_cost_usd >= policy.hard_stop_threshold_usd
 
 
 @dataclass(frozen=True)
 class OrderbookEvent:
-    """Normalized JSONL row written by the Rust Collector."""
+    """Rust Collector가 기록하는 정규화된 JSONL 행입니다."""
 
     schema_version: int
     event_type: OrderbookEventType

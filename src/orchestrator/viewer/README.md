@@ -1,4 +1,4 @@
-# Placeholder
+# 자리표시자
 
-This directory is reserved by the greenfield v2 structure. Implementation will
-be added after the architecture 22.1 contracts are locked and tested.
+이 디렉터리는 그린필드 v2 구조에서 예약된 위치입니다. 아키텍처 22.1절의 계약이
+고정되고 테스트된 뒤 실제 구현을 추가합니다.

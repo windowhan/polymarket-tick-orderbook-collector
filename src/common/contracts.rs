@@ -1,21 +1,21 @@
-//! Shared greenfield v2 architecture contracts.
+//! 그린필드 v2 아키텍처의 공유 계약 타입입니다.
 //!
-//! These types implement section 22.1 of `docs/our-docs/architecture-draft-kr.md`.
-//! They are intentionally data-oriented so the Rust Collector and Python
-//! Orchestrator can exchange JSON with the same field names and state values.
+//! 이 타입들은 `docs/our-docs/architecture-draft-kr.md`의 22.1절을 구현합니다.
+//! Rust Collector와 Python Orchestrator가 숨은 변환 규칙 없이 같은 필드명과
+//! 상태값으로 JSON을 주고받을 수 있도록 데이터 중심으로 설계했습니다.
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-/// Lifecycle state assigned to a Polymarket market by the Market Universe Manager.
+/// Market Universe Manager가 Polymarket 마켓에 부여하는 생명주기 상태입니다.
 ///
-/// # Detailed Description
-/// The Market Universe Manager periodically refreshes Gamma API market metadata
-/// and maps raw flags such as `active`, `closed`, `archived`, and
-/// `enable_order_book` into one of these explicit states.  Assignment planning
-/// consumes this state instead of duplicating raw-field policy decisions.
+/// # 상세 설명
+/// Market Universe Manager는 Gamma API 마켓 메타데이터를 주기적으로 갱신하고,
+/// `active`, `closed`, `archived`, `enable_order_book` 같은 원천 플래그를 명시적인
+/// 상태 중 하나로 매핑합니다. 배정 계획은 원천 필드 정책을 중복 구현하지 않고
+/// 이 상태값을 기준으로 판단합니다.
 ///
-/// # Example — Input / Output
+/// # 예시 — 입력 / 출력
 /// ```rust
 /// use polymarket_collector::common::contracts::MarketLifecycleState;
 ///
@@ -24,34 +24,34 @@ use std::collections::BTreeMap;
 /// assert_eq!(json, "\"ACTIVE\"");
 /// ```
 ///
-/// # Related
+/// # 관련
 /// - [`MarketUniverseSnapshot`]
 /// - [`MarketInfo`]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum MarketLifecycleState {
-    /// Market was newly seen and may need one more refresh before collection.
+    /// 새로 발견되어 수집 전 한 번 더 갱신 확인이 필요할 수 있는 마켓입니다.
     Discovered,
-    /// Market is eligible for assignment and WebSocket collection.
+    /// 배정과 WebSocket 수집 대상이 될 수 있는 활성 마켓입니다.
     Active,
-    /// Market is leaving active collection but may keep a short drain window.
+    /// 활성 수집에서 빠지는 중이며 짧은 배수 구간을 둘 수 있는 마켓입니다.
     Draining,
-    /// Market is closed and should not receive new assignments.
+    /// 종료되어 새 배정을 받으면 안 되는 마켓입니다.
     Closed,
-    /// Market is archived and removed from the active universe.
+    /// 보관 상태라 활성 유니버스에서 제거되는 마켓입니다.
     Archived,
-    /// Market is intentionally excluded by policy.
+    /// 정책상 의도적으로 제외된 마켓입니다.
     Excluded,
 }
 
-/// Global control state returned by the Orchestrator with assignments.
+/// Orchestrator가 배정 응답과 함께 내려주는 전역 제어 상태입니다.
 ///
-/// # Detailed Description
-/// This state lets the Orchestrator pause or stop Collectors without requiring
-/// a separate emergency endpoint.  Collectors must treat emergency stop as
-/// higher priority than assignment changes or handoff actions.
+/// # 상세 설명
+/// 이 상태를 통해 Orchestrator는 별도 긴급 엔드포인트 없이 Collector를 일시정지하거나
+/// 중단시킬 수 있습니다. Collector는 긴급 중단 상태를 일반 배정 변경이나 handoff 동작보다
+/// 더 높은 우선순위로 처리해야 합니다.
 ///
-/// # Example — Input / Output
+/// # 예시 — 입력 / 출력
 /// ```rust
 /// use polymarket_collector::common::contracts::ControlState;
 ///
@@ -59,30 +59,30 @@ pub enum MarketLifecycleState {
 /// assert_eq!(serde_json::to_string(&state).unwrap(), "\"EMERGENCY_STOP_BY_BUDGET\"");
 /// ```
 ///
-/// # Related
+/// # 관련
 /// - [`BudgetState`]
 /// - [`AssignmentPlan`]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum ControlState {
-    /// Normal collection is allowed.
+    /// 정상 수집을 허용합니다.
     Running,
-    /// Operator manually paused collection.
+    /// 운영자가 수동으로 수집을 일시정지했습니다.
     PausedByOperator,
-    /// Budget warning has been crossed; policy may restrict new assignments.
+    /// 예산 경고선에 도달했으며 정책상 새 배정을 제한할 수 있습니다.
     PausedByBudgetWarning,
-    /// Hard budget limit has been crossed; Collectors must stop WebSocket input.
+    /// 예산 하드 리밋에 도달했으므로 Collector는 WebSocket 입력을 중단해야 합니다.
     EmergencyStopByBudget,
 }
 
-/// Normalized event type emitted by the Collector.
+/// Collector가 내보내는 정규화된 이벤트 종류입니다.
 ///
-/// # Detailed Description
-/// Polymarket CLOB WebSocket messages use source-specific event names.  The
-/// Collector maps those events into this stable enum before writing JSONL so
-/// downstream compaction and viewer code do not depend on raw source naming.
+/// # 상세 설명
+/// Polymarket CLOB WebSocket 메시지는 원천별 이벤트 이름을 사용합니다. Collector는 JSONL을
+/// 쓰기 전에 해당 이벤트를 안정적인 열거형으로 매핑하여, 이후 compaction이나 viewer 코드가
+/// 원천 이벤트 이름에 직접 의존하지 않도록 합니다.
 ///
-/// # Example — Input / Output
+/// # 예시 — 입력 / 출력
 /// ```rust
 /// use polymarket_collector::common::contracts::OrderbookEventType;
 ///
@@ -90,28 +90,27 @@ pub enum ControlState {
 /// assert_eq!(serde_json::to_string(&event_type).unwrap(), "\"price_change\"");
 /// ```
 ///
-/// # Related
+/// # 관련
 /// - [`OrderbookEvent`]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum OrderbookEventType {
-    /// Full or partial book snapshot event.
+    /// 전체 또는 부분 오더북 스냅샷 이벤트입니다.
     Book,
-    /// Price/size level change event.
+    /// 가격/수량 레벨 변경 이벤트입니다.
     PriceChange,
-    /// Last trade event derived from `last_trade_price` source messages.
+    /// `last_trade_price` 원천 메시지에서 파생한 마지막 체결 이벤트입니다.
     LastTrade,
 }
 
-/// Handoff mode used when a shard must move between Collectors.
+/// shard를 Collector 사이에서 옮겨야 할 때 사용하는 handoff 방식입니다.
 ///
-/// # Detailed Description
-/// v1 avoids moving healthy shards for traffic spikes.  Handoff modes are kept
-/// for structural changes such as Collector failure recovery or explicit
-/// operator-directed movement.  `MakeBeforeBreak` minimizes subscription gaps by
-/// subscribing the destination before draining the source.
+/// # 상세 설명
+/// v1에서는 거래량 급증만으로 정상 shard를 옮기지 않습니다. handoff 방식은 Collector 장애 복구나
+/// 운영자가 명시한 이동처럼 구조적인 변경을 위해 유지합니다. `MakeBeforeBreak`는 목적지에서 먼저
+/// 구독을 시작한 뒤 원본을 배수하여 구독 공백을 최소화합니다.
 ///
-/// # Example — Input / Output
+/// # 예시 — 입력 / 출력
 /// ```rust
 /// use polymarket_collector::common::contracts::HandoffMode;
 ///
@@ -119,36 +118,35 @@ pub enum OrderbookEventType {
 /// assert_eq!(serde_json::to_string(&mode).unwrap(), "\"MAKE_BEFORE_BREAK\"");
 /// ```
 ///
-/// # Related
+/// # 관련
 /// - [`HandoffAction`]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum HandoffMode {
-    /// No handoff is required.
+    /// handoff가 필요하지 않습니다.
     None,
-    /// Destination subscribes before source unsubscribes.
+    /// 목적지 Collector가 먼저 구독한 뒤 원본 Collector가 구독을 해제합니다.
     MakeBeforeBreak,
-    /// Source unsubscribes before destination subscribes.
+    /// 원본 Collector가 먼저 구독을 해제한 뒤 목적지 Collector가 구독합니다.
     BreakBeforeMake,
-    /// Source drains/removes tokens without a destination Collector.
+    /// 목적지 Collector 없이 원본 토큰만 배수하거나 제거합니다.
     DrainOnly,
 }
 
-/// Metadata for a single market in the current universe snapshot.
+/// 현재 유니버스 스냅샷에 포함된 단일 마켓의 메타데이터입니다.
 ///
-/// # Detailed Description
-/// This type stores the normalized subset of Gamma API metadata required for
-/// assignment planning.  Raw Gamma payloads should not be passed through the
-/// planner directly because lifecycle policy should be explicit and auditable.
+/// # 상세 설명
+/// 배정 계획에 필요한 Gamma API 메타데이터의 정규화된 부분집합을 저장합니다. 생명주기 정책은
+/// 명시적이고 감사 가능해야 하므로 원시 Gamma payload를 planner에 직접 넘기지 않습니다.
 ///
-/// # Example — Input / Output
+/// # 예시 — 입력 / 출력
 /// ```rust
 /// use polymarket_collector::common::contracts::{MarketInfo, MarketLifecycleState};
 ///
 /// let market = MarketInfo {
 ///     market_id: "m1".into(),
 ///     slug: "example".into(),
-///     question: "Will this compile?".into(),
+///     question: "컴파일 예시인가?".into(),
 ///     active: true,
 ///     closed: false,
 ///     archived: false,
@@ -160,40 +158,39 @@ pub enum HandoffMode {
 /// assert_eq!(market.token_ids.len(), 2);
 /// ```
 ///
-/// # Related
+/// # 관련
 /// - [`MarketUniverseSnapshot`]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MarketInfo {
-    /// Stable market identifier from the source API.
+    /// 원천 API가 제공하는 안정적인 마켓 식별자입니다.
     pub market_id: String,
-    /// Human-readable URL slug.
+    /// 사람이 읽을 수 있는 URL slug입니다.
     pub slug: String,
-    /// Market question text.
+    /// 마켓 질문 문구입니다.
     pub question: String,
-    /// Raw active flag.
+    /// 원천 `active` 플래그입니다.
     pub active: bool,
-    /// Raw closed flag.
+    /// 원천 `closed` 플래그입니다.
     pub closed: bool,
-    /// Raw archived flag.
+    /// 원천 `archived` 플래그입니다.
     pub archived: bool,
-    /// Whether orders are currently accepted.
+    /// 현재 주문 접수를 허용하는지 여부입니다.
     pub accepting_orders: bool,
-    /// Whether CLOB orderbook is enabled.
+    /// CLOB 오더북이 활성화되어 있는지 여부입니다.
     pub enable_order_book: bool,
-    /// CLOB token IDs assigned to this market's outcomes.
+    /// 이 마켓의 결과값에 배정된 CLOB token ID 목록입니다.
     pub token_ids: Vec<String>,
-    /// Policy-derived lifecycle state.
+    /// 정책으로 도출한 생명주기 상태입니다.
     pub lifecycle_state: MarketLifecycleState,
 }
 
-/// Versioned snapshot of all markets eligible for planning decisions.
+/// 계획 판단에 사용할 수 있는 전체 마켓의 버전 관리 스냅샷입니다.
 ///
-/// # Detailed Description
-/// Every Gamma refresh that changes the normalized universe creates a new
-/// version.  Assignment plans reference this version so Collectors and operators
-/// can understand which market universe produced a given assignment.
+/// # 상세 설명
+/// 정규화된 유니버스가 바뀌는 Gamma 갱신마다 새 버전을 만듭니다. 배정 계획은 이 버전을 참조하여
+/// Collector와 운영자가 어떤 마켓 유니버스에서 해당 배정이 만들어졌는지 이해할 수 있게 합니다.
 ///
-/// # Example — Input / Output
+/// # 예시 — 입력 / 출력
 /// ```rust
 /// use polymarket_collector::common::contracts::MarketUniverseSnapshot;
 /// use std::collections::BTreeMap;
@@ -206,26 +203,25 @@ pub struct MarketInfo {
 /// assert_eq!(snapshot.version, 1);
 /// ```
 ///
-/// # Related
+/// # 관련
 /// - [`AssignmentPlan`]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MarketUniverseSnapshot {
-    /// Monotonic universe version.
+    /// 단조 증가하는 유니버스 버전입니다.
     pub version: u64,
-    /// Snapshot creation time in Unix milliseconds.
+    /// 스냅샷 생성 시각이며 Unix millisecond 단위입니다.
     pub generated_at_ms: i64,
-    /// Markets keyed by `market_id` for deterministic serialization.
+    /// 결정적 직렬화를 위해 `market_id`로 정렬된 마켓 맵입니다.
     pub markets: BTreeMap<String, MarketInfo>,
 }
 
-/// Declared capacity for a Collector process.
+/// Collector 프로세스가 선언한 처리 용량입니다.
 ///
-/// # Detailed Description
-/// The Orchestrator must not intentionally assign beyond this capacity.  Runtime
-/// overload metrics are separate and are used for alerting/protection rather
-/// than hot-market migration in v1.
+/// # 상세 설명
+/// Orchestrator는 의도적으로 이 용량을 넘는 배정을 만들면 안 됩니다. 런타임 overload 지표는
+/// 별도로 취급하며, v1에서는 hot-market 이동이 아니라 알림과 보호 판단에 사용합니다.
 ///
-/// # Example — Input / Output
+/// # 예시 — 입력 / 출력
 /// ```rust
 /// use polymarket_collector::common::contracts::CollectorCapacity;
 ///
@@ -240,41 +236,40 @@ pub struct MarketUniverseSnapshot {
 /// assert!(!capacity.fits_subscription_counts(11, 20, 2));
 /// ```
 ///
-/// # Related
+/// # 관련
 /// - [`CollectorStatus`]
 /// - [`AssignmentPlan`]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CollectorCapacity {
-    /// Maximum markets this Collector should subscribe to.
+    /// 이 Collector가 구독해야 하는 최대 마켓 수입니다.
     pub max_market_subscriptions: usize,
-    /// Maximum CLOB tokens this Collector should subscribe to.
+    /// 이 Collector가 구독해야 하는 최대 CLOB 토큰 수입니다.
     pub max_token_subscriptions: usize,
-    /// Maximum WebSocket connections this Collector should open.
+    /// 이 Collector가 열 수 있는 최대 WebSocket 연결 수입니다.
     pub max_ws_connections: usize,
-    /// Optional soft event-rate guardrail for alerting.
+    /// 알림에 사용할 선택적 soft 이벤트 속도 가드레일입니다.
     pub max_events_per_sec: Option<f64>,
-    /// Maximum local files waiting for upload/notify before alerting.
+    /// 업로드 또는 알림 대기 상태로 남아도 되는 로컬 파일 최대 수입니다.
     pub max_upload_backlog_files: usize,
 }
 
 impl CollectorCapacity {
-    /// Check whether planned subscription counts fit declared Collector capacity.
+    /// 계획된 구독 수가 선언된 Collector 용량 안에 들어오는지 확인합니다.
     ///
-    /// # Detailed Description
-    /// The assignment planner calls this before producing an assignment.  A
-    /// `false` result means the plan is invalid for this Collector and must be
-    /// split or assigned elsewhere.  This does not inspect runtime overload; it
-    /// only validates planned counts.
+    /// # 상세 설명
+    /// 배정 planner는 배정을 만들기 전에 이 함수를 호출합니다. `false`가 반환되면 해당 Collector에
+    /// 대한 계획은 유효하지 않으므로 쪼개거나 다른 Collector에 배정해야 합니다. 이 함수는 런타임
+    /// overload를 보지 않고 계획된 개수만 검증합니다.
     ///
-    /// # Arguments
-    /// * `market_count` — Number of markets planned for the Collector.
-    /// * `token_count` — Number of CLOB tokens planned for the Collector.
-    /// * `ws_connections` — Number of WebSocket connections expected.
+    /// # 인자
+    /// * `market_count` — Collector에 계획된 마켓 수입니다.
+    /// * `token_count` — Collector에 계획된 CLOB 토큰 수입니다.
+    /// * `ws_connections` — 예상 WebSocket 연결 수입니다.
     ///
-    /// # Returns
-    /// `true` when all planned counts are within capacity; otherwise `false`.
+    /// # 반환값
+    /// 모든 계획 수치가 용량 이내이면 `true`, 하나라도 넘으면 `false`를 반환합니다.
     ///
-    /// # Example — Input / Output
+    /// # 예시 — 입력 / 출력
     /// ```rust
     /// use polymarket_collector::common::contracts::CollectorCapacity;
     ///
@@ -289,7 +284,7 @@ impl CollectorCapacity {
     /// assert!(!capacity.fits_subscription_counts(3, 4, 1));
     /// ```
     ///
-    /// # Related
+    /// # 관련
     /// - [`AssignmentPlan`]
     pub fn fits_subscription_counts(
         &self,
@@ -303,15 +298,14 @@ impl CollectorCapacity {
     }
 }
 
-/// Runtime status reported by a Collector.
+/// Collector가 보고하는 런타임 상태입니다.
 ///
-/// # Detailed Description
-/// Status reports tell the Orchestrator what the Collector is actually doing.
-/// The Orchestrator uses these reports to detect assignment mismatch, backlog,
-/// reconnect churn, and capacity pressure.  In v1, traffic spikes do not cause
-/// automatic hot-market reassignment; they are observed and alerted.
+/// # 상세 설명
+/// 상태 보고는 Collector가 실제로 무엇을 하고 있는지 Orchestrator에게 알려줍니다. Orchestrator는
+/// 이 보고를 사용해 배정 불일치, backlog, reconnect 증가, 용량 압박을 감지합니다. v1에서는 거래량
+/// 급증이 자동 hot-market 재배정으로 이어지지 않고 관찰 및 알림 대상으로 남습니다.
 ///
-/// # Example — Input / Output
+/// # 예시 — 입력 / 출력
 /// ```rust
 /// use polymarket_collector::common::contracts::CollectorStatus;
 ///
@@ -332,51 +326,50 @@ impl CollectorCapacity {
 /// assert!(status.assignment_matches_subscription());
 /// ```
 ///
-/// # Related
+/// # 관련
 /// - [`CollectorCapacity`]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CollectorStatus {
-    /// Collector ID issued by the Orchestrator.
+    /// Orchestrator가 발급한 Collector ID입니다.
     pub collector_id: String,
-    /// Assignment version currently applied by this Collector.
+    /// 이 Collector가 현재 적용 중인 배정 버전입니다.
     pub assignment_version: u64,
-    /// Number of markets the Orchestrator assigned.
+    /// Orchestrator가 배정한 마켓 수입니다.
     pub assigned_market_count: usize,
-    /// Number of tokens the Orchestrator assigned.
+    /// Orchestrator가 배정한 토큰 수입니다.
     pub assigned_token_count: usize,
-    /// Number of markets actually subscribed.
+    /// 실제로 구독 중인 마켓 수입니다.
     pub subscribed_market_count: usize,
-    /// Number of tokens actually subscribed.
+    /// 실제로 구독 중인 토큰 수입니다.
     pub subscribed_token_count: usize,
-    /// Currently open WebSocket connections.
+    /// 현재 열려 있는 WebSocket 연결 수입니다.
     pub active_ws_connections: usize,
-    /// Observed event rate for alerting and dashboards.
+    /// 알림과 대시보드에 사용할 관측 이벤트 속도입니다.
     pub events_per_sec: f64,
-    /// Reconnect count in the last minute.
+    /// 최근 1분 동안의 reconnect 횟수입니다.
     pub reconnects_last_minute: usize,
-    /// Files waiting for upload or notify.
+    /// 업로드 또는 알림을 기다리는 파일 수입니다.
     pub upload_backlog_files: usize,
-    /// Bytes currently retained in local spool.
+    /// 로컬 spool에 현재 남아 있는 바이트 수입니다.
     pub local_spool_bytes: u64,
-    /// Last successful upload time in Unix milliseconds.
+    /// 마지막 업로드 성공 시각이며 Unix millisecond 단위입니다.
     pub last_successful_upload_at_ms: Option<i64>,
 }
 
 impl CollectorStatus {
-    /// Check whether actual subscriptions match the current assignment counts.
+    /// 실제 구독 수가 현재 배정 수와 일치하는지 확인합니다.
     ///
-    /// # Detailed Description
-    /// This helps the Orchestrator distinguish "assigned" from "actually
-    /// subscribed." A mismatch should not trigger traffic-based hot migration in
-    /// v1, but it should be surfaced as an operational warning or repair item.
+    /// # 상세 설명
+    /// 이 함수는 Orchestrator가 “배정됨”과 “실제로 구독됨”을 구분하도록 돕습니다. 불일치가 있더라도
+    /// v1에서는 거래량 기반 hot migration을 일으키지 않으며, 운영 경고나 복구 항목으로 노출해야 합니다.
     ///
-    /// # Arguments
-    /// This method does not accept additional arguments.
+    /// # 인자
+    /// 이 메서드는 추가 인자를 받지 않습니다.
     ///
-    /// # Returns
-    /// `true` when market and token subscription counts match assignment counts.
+    /// # 반환값
+    /// 마켓과 토큰 구독 수가 배정 수와 모두 일치하면 `true`를 반환합니다.
     ///
-    /// # Example — Input / Output
+    /// # 예시 — 입력 / 출력
     /// ```rust
     /// # use polymarket_collector::common::contracts::CollectorStatus;
     /// # let status = CollectorStatus { collector_id: "c".into(), assignment_version: 1,
@@ -387,7 +380,7 @@ impl CollectorStatus {
     /// assert!(status.assignment_matches_subscription());
     /// ```
     ///
-    /// # Related
+    /// # 관련
     /// - [`CollectorCapacity`]
     pub fn assignment_matches_subscription(&self) -> bool {
         self.assigned_market_count == self.subscribed_market_count
@@ -395,88 +388,84 @@ impl CollectorStatus {
     }
 }
 
-/// Per-assignment limits sent to a Collector.
+/// 단일 배정과 함께 Collector에 전달되는 실행 제한입니다.
 ///
-/// # Detailed Description
-/// These limits describe how the Collector should split assigned tokens into
-/// WebSocket workers.  They are distinct from registration capacity, which is
-/// the Collector's advertised maximum.
+/// # 상세 설명
+/// 이 제한은 Collector가 배정된 토큰을 WebSocket worker로 어떻게 나눌지 설명합니다. 이는 Collector가
+/// 등록 시 광고하는 최대치인 등록 용량과 구분됩니다.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AssignmentLimits {
-    /// Maximum WebSocket connections for this assignment.
+    /// 이 배정에서 사용할 수 있는 최대 WebSocket 연결 수입니다.
     pub max_ws_connections: usize,
-    /// Maximum tokens per WebSocket connection.
+    /// WebSocket 연결 하나에 담을 수 있는 최대 토큰 수입니다.
     pub max_tokens_per_ws_connection: usize,
 }
 
-/// Planned handoff for a set of token IDs.
+/// 토큰 ID 묶음에 대해 계획된 구조적 handoff입니다.
 ///
-/// # Detailed Description
-/// Handoff actions are only for structural movement in v1, such as Collector
-/// failure recovery or operator-directed moves.  They are not generated for
-/// hot-market traffic spikes.
+/// # 상세 설명
+/// handoff action은 v1에서 Collector 장애 복구나 운영자 지시 이동 같은 구조적 이동에만 사용합니다.
+/// 거래량 급증만으로는 생성하지 않습니다.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HandoffAction {
-    /// Token IDs involved in the handoff.
+    /// handoff 대상 token ID 목록입니다.
     pub token_ids: Vec<String>,
-    /// Source Collector, if any.
+    /// 원본 Collector ID이며 없을 수도 있습니다.
     pub from_collector_id: Option<String>,
-    /// Destination Collector, if any.
+    /// 목적지 Collector ID이며 없을 수도 있습니다.
     pub to_collector_id: Option<String>,
-    /// Handoff mode.
+    /// 적용할 handoff 방식입니다.
     pub mode: HandoffMode,
-    /// Optional overlap window in milliseconds.
+    /// 선택적 중첩 구간이며 millisecond 단위입니다.
     pub overlap_window_ms: Option<u64>,
 }
 
-/// Assignment for a single Collector.
+/// 단일 Collector에 대한 배정 payload입니다.
 ///
-/// # Detailed Description
-/// The Orchestrator returns this payload to a Collector.  The `token_ids` and
-/// `market_ids` vectors are the authoritative collection set for the referenced
-/// `assignment_version`.
+/// # 상세 설명
+/// Orchestrator는 이 payload를 Collector에 반환합니다. `token_ids`와 `market_ids` 벡터는 참조된
+/// `assignment_version`에서 권위 있는 수집 대상 집합입니다.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CollectorAssignment {
-    /// Collector ID receiving the assignment.
+    /// 배정을 받을 Collector ID입니다.
     pub collector_id: String,
-    /// Market IDs assigned to the Collector.
+    /// Collector에 배정된 market ID 목록입니다.
     pub market_ids: Vec<String>,
-    /// Token IDs assigned to the Collector.
+    /// Collector에 배정된 token ID 목록입니다.
     pub token_ids: Vec<String>,
-    /// Runtime limits for worker splitting.
+    /// worker 분할에 사용할 런타임 제한입니다.
     pub limits: AssignmentLimits,
-    /// Planned handoff actions, if any.
+    /// 계획된 handoff action 목록이며 없을 수 있습니다.
     pub handoff_actions: Vec<HandoffAction>,
 }
 
-/// Versioned assignment plan for all Collectors.
+/// 모든 Collector에 대한 버전 관리 배정 계획입니다.
 ///
-/// # Detailed Description
-/// A plan references one market universe version and includes the global control
-/// state.  Collectors should stop collection when `control_state` is
-/// `EmergencyStopByBudget`, even if token IDs are present.
+/// # 상세 설명
+/// 계획은 하나의 마켓 유니버스 버전을 참조하고 전역 제어 상태를 포함합니다. `control_state`가
+/// `EmergencyStopByBudget`이면 token ID가 들어 있더라도 Collector는 수집을 중단해야 합니다.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AssignmentPlan {
-    /// Monotonic assignment version.
+    /// 단조 증가하는 배정 버전입니다.
     pub version: u64,
-    /// Market universe version used to build this assignment.
+    /// 이 배정을 만들 때 사용한 마켓 유니버스 버전입니다.
     pub universe_version: u64,
-    /// Plan creation time in Unix milliseconds.
+    /// 계획 생성 시각이며 Unix millisecond 단위입니다.
     pub generated_at_ms: i64,
-    /// Global control state.
+    /// 전역 제어 상태입니다.
     pub control_state: ControlState,
-    /// Collector assignments keyed by Collector ID.
+    /// Collector ID로 정렬된 Collector별 배정입니다.
     pub collectors: BTreeMap<String, CollectorAssignment>,
 }
 
-/// Metadata notification for a newly uploaded GCS object.
+/// 새로 업로드된 GCS object에 대한 메타데이터 알림입니다.
 ///
-/// # Detailed Description
-/// Collectors send this payload after uploading a closed local JSONL file.  The
-/// Orchestrator stores the metadata and the Compactor later downloads the object
-/// from GCS.  The JSONL body is never sent through the control plane.
+/// # 상세 설명
+/// Collector는 닫힌 로컬 JSONL 파일을 업로드한 뒤 이 payload를 보냅니다. Orchestrator는 메타데이터를
+/// 저장하고 Compactor는 나중에 GCS에서 object 본문을 내려받습니다. JSONL 본문은 제어면을 통해
+/// 전송하지 않습니다.
 ///
-/// # Example — Input / Output
+/// # 예시 — 입력 / 출력
 /// ```rust
 /// use polymarket_collector::common::contracts::ObjectNotification;
 ///
@@ -494,45 +483,44 @@ pub struct AssignmentPlan {
 /// assert_eq!(notification.idempotency_key(), "bucket/raw/object.jsonl#123");
 /// ```
 ///
-/// # Related
+/// # 관련
 /// - [`ProcessedObject`]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ObjectNotification {
-    /// Collector that uploaded the object.
+    /// object를 업로드한 Collector입니다.
     pub collector_id: String,
-    /// Assignment version active when the object was produced.
+    /// object가 생성될 당시 적용 중이던 배정 버전입니다.
     pub assignment_version: u64,
-    /// GCS bucket name.
+    /// GCS bucket 이름입니다.
     pub bucket: String,
-    /// GCS object name.
+    /// GCS object 이름입니다.
     pub object_name: String,
-    /// GCS object generation.
+    /// GCS object generation 값입니다.
     pub generation: String,
-    /// Number of JSONL lines reported by the Collector.
+    /// Collector가 보고한 JSONL 라인 수입니다.
     pub line_count: usize,
-    /// First source event timestamp in Unix milliseconds, when known.
+    /// 알 수 있는 경우 첫 원천 이벤트 시각이며 Unix millisecond 단위입니다.
     pub first_event_ts_ms: Option<i64>,
-    /// Last source event timestamp in Unix milliseconds, when known.
+    /// 알 수 있는 경우 마지막 원천 이벤트 시각이며 Unix millisecond 단위입니다.
     pub last_event_ts_ms: Option<i64>,
-    /// Optional CRC32C checksum from GCS metadata.
+    /// GCS 메타데이터에서 온 선택적 CRC32C checksum입니다.
     pub checksum_crc32c: Option<String>,
 }
 
 impl ObjectNotification {
-    /// Build the object-level idempotency key.
+    /// object 단위 멱등성 key를 만듭니다.
     ///
-    /// # Detailed Description
-    /// GCS can have multiple generations for the same object name.  Including
-    /// generation prevents a later upload with the same name from being skipped
-    /// incorrectly.
+    /// # 상세 설명
+    /// GCS는 같은 object 이름에 대해 여러 generation을 가질 수 있습니다. generation을 key에 포함하면
+    /// 같은 이름으로 나중에 다시 업로드된 object가 잘못 skip되는 일을 막을 수 있습니다.
     ///
-    /// # Arguments
-    /// This method does not accept additional arguments.
+    /// # 인자
+    /// 이 메서드는 추가 인자를 받지 않습니다.
     ///
-    /// # Returns
-    /// A stable `bucket/object_name#generation` key.
+    /// # 반환값
+    /// 안정적인 `bucket/object_name#generation` key를 반환합니다.
     ///
-    /// # Example — Input / Output
+    /// # 예시 — 입력 / 출력
     /// ```rust
     /// # use polymarket_collector::common::contracts::ObjectNotification;
     /// # let notification = ObjectNotification { collector_id: "c".into(), assignment_version: 1,
@@ -541,53 +529,52 @@ impl ObjectNotification {
     /// assert_eq!(notification.idempotency_key(), "b/o#g");
     /// ```
     ///
-    /// # Related
+    /// # 관련
     /// - [`ProcessedObject::idempotency_key`]
     pub fn idempotency_key(&self) -> String {
         format!("{}/{}#{}", self.bucket, self.object_name, self.generation)
     }
 }
 
-/// Durable record that a GCS object generation has been merged.
+/// GCS object generation이 병합 완료되었음을 기록하는 영속 manifest 행입니다.
 ///
-/// # Detailed Description
-/// Compactor restarts, duplicate notifications, and prefix polling can reveal
-/// the same object more than once.  This manifest record lets the Compactor skip
-/// already merged object generations.
+/// # 상세 설명
+/// Compactor 재시작, 중복 알림, prefix polling은 같은 object를 두 번 이상 발견할 수 있습니다.
+/// 이 manifest 행은 이미 병합한 object generation을 Compactor가 건너뛰도록 해줍니다.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProcessedObject {
-    /// GCS bucket name.
+    /// GCS bucket 이름입니다.
     pub bucket: String,
-    /// GCS object name.
+    /// GCS object 이름입니다.
     pub object_name: String,
-    /// GCS object generation.
+    /// GCS object generation 값입니다.
     pub generation: String,
-    /// Processing completion time in Unix milliseconds.
+    /// 처리 완료 시각이며 Unix millisecond 단위입니다.
     pub processed_at_ms: i64,
-    /// Input JSONL line count.
+    /// 입력 JSONL 라인 수입니다.
     pub input_line_count: usize,
-    /// Valid output line count.
+    /// 유효한 출력 라인 수입니다.
     pub valid_line_count: usize,
-    /// Skipped malformed line count.
+    /// 형식 오류 등으로 건너뛴 라인 수입니다.
     pub skipped_line_count: usize,
-    /// Merged output path or object name.
+    /// 병합 결과 경로 또는 object 이름입니다.
     pub output_path: String,
 }
 
 impl ProcessedObject {
-    /// Build the same idempotency key used by object notifications.
+    /// object 알림과 같은 멱등성 key를 만듭니다.
     ///
-    /// # Detailed Description
-    /// The Compactor can compare this value with [`ObjectNotification`] keys to
-    /// determine whether an input object generation has already been processed.
+    /// # 상세 설명
+    /// Compactor는 이 값을 [`ObjectNotification`] key와 비교하여 입력 object generation이 이미
+    /// 처리되었는지 판단할 수 있습니다.
     ///
-    /// # Arguments
-    /// This method does not accept additional arguments.
+    /// # 인자
+    /// 이 메서드는 추가 인자를 받지 않습니다.
     ///
-    /// # Returns
-    /// A stable `bucket/object_name#generation` key.
+    /// # 반환값
+    /// 안정적인 `bucket/object_name#generation` key를 반환합니다.
     ///
-    /// # Example — Input / Output
+    /// # 예시 — 입력 / 출력
     /// ```rust
     /// # use polymarket_collector::common::contracts::ProcessedObject;
     /// # let processed = ProcessedObject { bucket: "b".into(), object_name: "o".into(),
@@ -596,69 +583,68 @@ impl ProcessedObject {
     /// assert_eq!(processed.idempotency_key(), "b/o#g");
     /// ```
     ///
-    /// # Related
+    /// # 관련
     /// - [`ObjectNotification::idempotency_key`]
     pub fn idempotency_key(&self) -> String {
         format!("{}/{}#{}", self.bucket, self.object_name, self.generation)
     }
 }
 
-/// Configured budget thresholds for GCS cost guardrails.
+/// GCS 비용 가드레일에 사용할 예산 임계값 설정입니다.
 ///
-/// # Detailed Description
-/// The Orchestrator uses this policy to decide when to send Discord warnings
-/// and when to enter emergency stop.  The Discord webhook should be referenced
-/// by secret name rather than stored directly in code or manifests.
+/// # 상세 설명
+/// Orchestrator는 이 정책으로 Discord 경고를 보낼 시점과 긴급 중단에 들어갈 시점을 결정합니다.
+/// Discord webhook URL은 코드나 manifest에 직접 저장하지 말고 secret 이름으로 참조해야 합니다.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct BudgetPolicy {
-    /// Warning threshold in estimated USD.
+    /// 추정 USD 비용 기준의 경고 임계값입니다.
     pub warning_threshold_usd: f64,
-    /// Hard stop threshold in estimated USD.
+    /// 추정 USD 비용 기준의 강제 중단 임계값입니다.
     pub hard_stop_threshold_usd: f64,
-    /// Secret name or config key that resolves to the Discord webhook URL.
+    /// Discord webhook URL을 조회할 secret 이름 또는 config key입니다.
     pub discord_webhook_secret_name: String,
-    /// Cost check interval in seconds.
+    /// 비용 확인 주기이며 second 단위입니다.
     pub check_interval_secs: u64,
 }
 
-/// Runtime budget state maintained by the Orchestrator.
+/// Orchestrator가 유지하는 런타임 예산 상태입니다.
 ///
-/// # Detailed Description
-/// Google Cloud Billing data may lag, so this state tracks an internal estimate
-/// from uploaded bytes and object operations.  Crossing the hard stop threshold
-/// should move global control state to [`ControlState::EmergencyStopByBudget`].
+/// # 상세 설명
+/// Google Cloud Billing 데이터는 지연될 수 있으므로, 이 상태는 업로드 바이트와 object 작업 수를
+/// 바탕으로 내부 추정치를 추적합니다. 하드 리밋을 넘으면 전역 제어 상태를
+/// [`ControlState::EmergencyStopByBudget`]로 바꿔야 합니다.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct BudgetState {
-    /// Current estimated GCS cost in USD.
+    /// 현재 추정 GCS 비용이며 USD 단위입니다.
     pub estimated_gcs_cost_usd: f64,
-    /// Uploaded bytes counted by Collector notifications.
+    /// Collector 알림으로 집계한 업로드 바이트 수입니다.
     pub uploaded_bytes: u64,
-    /// GCS object create operation count.
+    /// GCS object 생성 작업 수입니다.
     pub object_create_count: u64,
-    /// GCS object list operation count.
+    /// GCS object 목록 조회 작업 수입니다.
     pub object_list_count: u64,
-    /// GCS object get operation count.
+    /// GCS object 다운로드 작업 수입니다.
     pub object_get_count: u64,
-    /// GCS object delete operation count.
+    /// GCS object 삭제 작업 수입니다.
     pub object_delete_count: u64,
-    /// Current global control state derived from budget policy.
+    /// 예산 정책에서 도출한 현재 전역 제어 상태입니다.
     pub control_state: ControlState,
 }
 
 impl BudgetState {
-    /// Determine whether the warning threshold has been crossed.
+    /// 경고 임계값을 넘었는지 확인합니다.
     ///
-    /// # Detailed Description
-    /// This is a pure comparison helper.  The caller is responsible for sending
-    /// Discord notifications and recording alert state to avoid duplicate spam.
+    /// # 상세 설명
+    /// 이 함수는 순수 비교 helper입니다. Discord 알림 전송과 중복 spam 방지를 위한 알림 상태 기록은
+    /// 호출자가 책임집니다.
     ///
-    /// # Arguments
-    /// * `policy` — Budget thresholds configured by the operator.
+    /// # 인자
+    /// * `policy` — 운영자가 설정한 예산 임계값입니다.
     ///
-    /// # Returns
-    /// `true` when estimated cost is greater than or equal to warning threshold.
+    /// # 반환값
+    /// 추정 비용이 경고 임계값 이상이면 `true`를 반환합니다.
     ///
-    /// # Example — Input / Output
+    /// # 예시 — 입력 / 출력
     /// ```rust
     /// # use polymarket_collector::common::contracts::{BudgetPolicy, BudgetState, ControlState};
     /// # let policy = BudgetPolicy { warning_threshold_usd: 10.0, hard_stop_threshold_usd: 20.0,
@@ -669,26 +655,25 @@ impl BudgetState {
     /// assert!(state.warning_exceeded(&policy));
     /// ```
     ///
-    /// # Related
+    /// # 관련
     /// - [`BudgetState::hard_stop_exceeded`]
     pub fn warning_exceeded(&self, policy: &BudgetPolicy) -> bool {
         self.estimated_gcs_cost_usd >= policy.warning_threshold_usd
     }
 
-    /// Determine whether the hard stop threshold has been crossed.
+    /// 강제 중단 임계값을 넘었는지 확인합니다.
     ///
-    /// # Detailed Description
-    /// When this returns `true`, the Orchestrator should publish emergency stop
-    /// state and Collectors should close WebSocket subscriptions while retaining
-    /// local spool according to policy.
+    /// # 상세 설명
+    /// 이 함수가 `true`를 반환하면 Orchestrator는 긴급 중단 상태를 게시해야 하며, Collector는 정책에
+    /// 따라 로컬 spool을 유지한 채 WebSocket 구독을 닫아야 합니다.
     ///
-    /// # Arguments
-    /// * `policy` — Budget thresholds configured by the operator.
+    /// # 인자
+    /// * `policy` — 운영자가 설정한 예산 임계값입니다.
     ///
-    /// # Returns
-    /// `true` when estimated cost is greater than or equal to hard stop threshold.
+    /// # 반환값
+    /// 추정 비용이 강제 중단 임계값 이상이면 `true`를 반환합니다.
     ///
-    /// # Example — Input / Output
+    /// # 예시 — 입력 / 출력
     /// ```rust
     /// # use polymarket_collector::common::contracts::{BudgetPolicy, BudgetState, ControlState};
     /// # let policy = BudgetPolicy { warning_threshold_usd: 10.0, hard_stop_threshold_usd: 20.0,
@@ -699,46 +684,45 @@ impl BudgetState {
     /// assert!(!state.hard_stop_exceeded(&policy));
     /// ```
     ///
-    /// # Related
+    /// # 관련
     /// - [`ControlState::EmergencyStopByBudget`]
     pub fn hard_stop_exceeded(&self, policy: &BudgetPolicy) -> bool {
         self.estimated_gcs_cost_usd >= policy.hard_stop_threshold_usd
     }
 }
 
-/// Normalized event written by the Rust Collector.
+/// Rust Collector가 기록하는 정규화된 이벤트 행입니다.
 ///
-/// # Detailed Description
-/// This is the row-level JSONL contract for raw/merged orderbook output.  The
-/// Collector keeps the original source payload in `raw` so parser bugs or schema
-/// changes can be audited later.
+/// # 상세 설명
+/// raw/merged 오더북 출력에 사용하는 행 단위 JSONL 계약입니다. Collector는 parser 버그나 schema 변경을
+/// 나중에 감사할 수 있도록 원천 payload를 `raw`에 보존합니다.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct OrderbookEvent {
-    /// Event schema version.
+    /// 이벤트 schema 버전입니다.
     pub schema_version: u32,
-    /// Normalized event type.
+    /// 정규화된 이벤트 종류입니다.
     pub event_type: OrderbookEventType,
-    /// Optional market ID if known from the universe snapshot.
+    /// 유니버스 스냅샷에서 알 수 있는 경우의 market ID입니다.
     pub market_id: Option<String>,
-    /// CLOB token ID.
+    /// CLOB token ID입니다.
     pub asset: String,
-    /// Side such as BUY, SELL, bid, or ask.
+    /// BUY, SELL, bid, ask 같은 side 값입니다.
     pub side: Option<String>,
-    /// Decimal price.
+    /// 십진수 가격입니다.
     pub price: Option<f64>,
-    /// Decimal size.
+    /// 십진수 수량입니다.
     pub size: Option<f64>,
-    /// Source event timestamp in Unix milliseconds.
+    /// 원천 이벤트 시각이며 Unix millisecond 단위입니다.
     pub timestamp_ms: i64,
-    /// Collector receive timestamp in Unix milliseconds.
+    /// Collector가 이벤트를 받은 시각이며 Unix millisecond 단위입니다.
     pub received_at_ms: i64,
-    /// Collector that observed the event.
+    /// 이벤트를 관측한 Collector입니다.
     pub collector_id: String,
-    /// Assignment version active when observed.
+    /// 이벤트 관측 당시 적용 중이던 배정 버전입니다.
     pub assignment_version: u64,
-    /// Market universe version active when observed.
+    /// 이벤트 관측 당시 적용 중이던 마켓 유니버스 버전입니다.
     pub universe_version: u64,
-    /// Original source JSON payload.
+    /// 원본 원천 JSON payload입니다.
     pub raw: String,
 }
 
