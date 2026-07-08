@@ -11,6 +11,8 @@ from .models import (
     TaskSpec,
 )
 
+from .planner import build_assignment_plan
+
 __all__ = [
     "Assignment",
     "AssignmentAdapter",
@@ -22,4 +24,5 @@ __all__ = [
     "PlannerContext",
     "ResourceVector",
     "TaskSpec",
+    "build_assignment_plan",
 ]
