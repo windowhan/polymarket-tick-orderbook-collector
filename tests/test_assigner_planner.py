@@ -1,0 +1,74 @@
+"""Polymarket assignment planner wrapper를 검증합니다."""
+
+import unittest
+
+from src.orchestrator.assigner import PolymarketAdapterPolicy, build_polymarket_assignment_plan
+from src.orchestrator.contracts import (
+    AssignmentLimits,
+    AssignmentPlan,
+    CollectorAssignment,
+    CollectorCapacity,
+    ControlState,
+    MarketInfo,
+    MarketLifecycleState,
+    MarketUniverseSnapshot,
+)
+
+
+class PolymarketAssignmentPlannerTests(unittest.TestCase):
+    def test_builds_assignment_plan_from_generic_core(self) -> None:
+        universe = MarketUniverseSnapshot(1, 1000, {"m1": self._market("m1", ["t1", "t2"])})
+        capacities = {"collector-a": CollectorCapacity(2, 4, 1, None, 10)}
+
+        plan = build_polymarket_assignment_plan(universe, capacities, 7, 2000)
+
+        assignment = plan.collectors["collector-a"]
+        self.assertEqual(plan.version, 7)
+        self.assertEqual(plan.universe_version, 1)
+        self.assertEqual(assignment.market_ids, ["m1"])
+        self.assertEqual(assignment.token_ids, ["t1", "t2"])
+        self.assertEqual(assignment.limits.max_ws_connections, 1)
+
+    def test_hard_stop_bypasses_collectors(self) -> None:
+        universe = MarketUniverseSnapshot(3, 1000, {})
+
+        plan = build_polymarket_assignment_plan(
+            universe,
+            {},
+            8,
+            2000,
+            control_state=ControlState.EMERGENCY_STOP_BY_BUDGET,
+        )
+
+        self.assertEqual(plan.control_state, ControlState.EMERGENCY_STOP_BY_BUDGET)
+        self.assertEqual(plan.collectors, {})
+
+    def test_previous_plan_keeps_existing_collector(self) -> None:
+        universe = MarketUniverseSnapshot(1, 1000, {"m1": self._market("m1", ["t1"])})
+        capacities = {
+            "collector-a": CollectorCapacity(1, 1, 1, None, 10),
+            "collector-b": CollectorCapacity(1, 1, 1, None, 10),
+        }
+        previous = AssignmentPlan(
+            1,
+            1,
+            900,
+            ControlState.RUNNING,
+            {
+                "collector-b": CollectorAssignment(
+                    "collector-b",
+                    ["m1"],
+                    ["t1"],
+                    AssignmentLimits(1, PolymarketAdapterPolicy().max_tokens_per_ws_connection),
+                )
+            },
+        )
+
+        plan = build_polymarket_assignment_plan(universe, capacities, 2, 2000, previous_plan=previous)
+
+        self.assertEqual(plan.collectors["collector-b"].market_ids, ["m1"])
+        self.assertEqual(plan.collectors["collector-a"].market_ids, [])
+
+    @staticmethod
+    def _market(market_id: str, token_ids: list[str]) -> MarketInfo:
+        return MarketInfo(market_id, market_id, market_id, True, False, False, True, True, token_ids, MarketLifecycleState.ACTIVE)
