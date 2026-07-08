@@ -12,6 +12,7 @@ from .models import (
 )
 
 from .planner import build_assignment_plan
+from .rebalance import RebalanceReason, detect_rebalance_reasons
 
 __all__ = [
     "Assignment",
@@ -22,7 +23,9 @@ __all__ = [
     "NodeRuntimeHint",
     "NodeSpec",
     "PlannerContext",
+    "RebalanceReason",
     "ResourceVector",
     "TaskSpec",
     "build_assignment_plan",
+    "detect_rebalance_reasons",
 ]
