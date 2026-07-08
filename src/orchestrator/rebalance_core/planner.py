@@ -118,7 +118,6 @@ def _sort_nodes(nodes: Iterable[NodeSpec]) -> tuple[NodeSpec, ...]:
 
 
 
-
 def _task_map(tasks: tuple[TaskSpec, ...]) -> dict[str, TaskSpec]:
     """task id로 task를 조회하는 map을 생성합니다."""
 
@@ -162,7 +161,14 @@ def _keep_previous_assignments(
         # task나 node가 사라졌으면 이전 배정은 더 이상 유효하지 않습니다.
         if task is None or node is None:
             continue
-        result = _candidate_for_node(task, node, usage_by_node[node.node_id], adapter, context)
+        result = _candidate_for_node(
+            task,
+            node,
+            usage_by_node[node.node_id],
+            adapter,
+            context,
+            existing_assignment=True,
+        )
         # capacity나 adapter 제약을 깨는 이전 배정은 유지하지 않습니다.
         if result.candidate is None:
             continue
@@ -170,6 +176,7 @@ def _keep_previous_assignments(
         assigned_task_ids.add(assignment.task_id)
         usage_by_node[node.node_id] = result.candidate.proposed_usage
     return kept_assignments, assigned_task_ids
+
 
 def _empty_usage_by_node(nodes: tuple[NodeSpec, ...]) -> dict[str, ResourceVector]:
     """모든 node의 초기 resource usage map을 생성합니다."""
@@ -194,7 +201,14 @@ def _choose_node_for_new_task(
     reject_reasons: list[str] = []
     # 모든 node를 stable order로 검사해 candidate와 reject reason을 수집합니다.
     for node in nodes:
-        result = _candidate_for_node(task, node, usage_by_node[node.node_id], adapter, context)
+        result = _candidate_for_node(
+            task,
+            node,
+            usage_by_node[node.node_id],
+            adapter,
+            context,
+            existing_assignment=False,
+        )
         # node가 후보가 아니면 이유만 누적하고 다음 node를 검사합니다.
         if result.candidate is None:
             reject_reasons.extend(result.reasons)
@@ -215,12 +229,17 @@ def _candidate_for_node(
     current_usage: ResourceVector,
     adapter: AssignmentAdapter,
     context: PlannerContext,
+    existing_assignment: bool,
 ) -> _CandidateResult:
     """task-node pair 하나가 배정 후보인지 평가합니다."""
 
-    # unavailable node는 새 task를 받을 수 없습니다.
-    if not node.available:
+    hint = context.hint_for(node.node_id)
+    # 정적 node 상태나 runtime hint가 unavailable이면 기존/신규 배정 모두 막습니다.
+    if not node.available or not hint.available:
         return _CandidateResult(candidate=None, reasons=(f"{node.node_id}:node_unavailable",))
+    # 신규 배정에서는 node와 runtime hint의 신규 수용 가능 상태를 모두 확인합니다.
+    if not existing_assignment and (not node.accepts_new_tasks or not hint.accepts_new_tasks):
+        return _CandidateResult(candidate=None, reasons=(f"{node.node_id}:not_accepting_new_tasks",))
 
     proposed_usage = current_usage.plus(task.resources)
     # proposed usage가 capacity를 넘으면 adapter score와 무관하게 거절합니다.

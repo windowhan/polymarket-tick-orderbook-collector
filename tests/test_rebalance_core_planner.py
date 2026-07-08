@@ -5,6 +5,7 @@ import unittest
 from src.orchestrator.rebalance_core import (
     Assignment,
     ConstraintDecision,
+    NodeRuntimeHint,
     NodeSpec,
     PlannerContext,
     ResourceVector,
@@ -113,3 +114,49 @@ class _RejectNodeAAdapter:
 
     def score_assignment(self, task: TaskSpec, node: NodeSpec, context: PlannerContext):
         return 0.0
+
+
+class AssignmentPlannerRuntimeHintTests(unittest.TestCase):
+    def test_runtime_unavailable_node_is_excluded(self) -> None:
+        tasks = [TaskSpec("task-a", ResourceVector({"markets": 1}))]
+        nodes = [
+            NodeSpec("node-a", ResourceVector({"markets": 1})),
+            NodeSpec("node-b", ResourceVector({"markets": 1})),
+        ]
+        context = PlannerContext(
+            runtime_hints={"node-a": NodeRuntimeHint(node_id="node-a", available=False)}
+        )
+
+        plan = build_assignment_plan(tasks, nodes, context=context)
+
+        self.assertEqual(plan.assignments, (Assignment("task-a", "node-b"),))
+
+    def test_not_accepting_new_tasks_keeps_previous_but_blocks_new(self) -> None:
+        tasks = [
+            TaskSpec("task-a", ResourceVector({"markets": 1})),
+            TaskSpec("task-b", ResourceVector({"markets": 1})),
+        ]
+        nodes = [
+            NodeSpec("node-a", ResourceVector({"markets": 2}), accepts_new_tasks=False),
+            NodeSpec("node-b", ResourceVector({"markets": 1})),
+        ]
+
+        plan = build_assignment_plan(
+            tasks,
+            nodes,
+            previous_assignments=[Assignment("task-a", "node-a")],
+        )
+
+        self.assertEqual(
+            plan.assignments,
+            (Assignment("task-a", "node-a"), Assignment("task-b", "node-b")),
+        )
+
+    def test_not_accepting_new_tasks_reason_is_reported(self) -> None:
+        tasks = [TaskSpec("task-a", ResourceVector({"markets": 1}))]
+        nodes = [NodeSpec("node-a", ResourceVector({"markets": 1}), accepts_new_tasks=False)]
+
+        plan = build_assignment_plan(tasks, nodes)
+
+        self.assertEqual(plan.unassigned_task_ids, ("task-a",))
+        self.assertEqual(plan.reasons["task-a"], ("node-a:not_accepting_new_tasks",))
