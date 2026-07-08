@@ -1,7 +1,7 @@
 """재사용 가능한 task/node 리밸런싱 core의 순수 model 타입입니다.
 
-이 모듈은 Polymarket, Gamma, cloud storage, notification 같은 도메인 지식을 갖지
-않습니다. 모든 용량은 문자열 key를 가진 generic resource vector로 표현합니다.
+이 모듈은 특정 시장, 저장소, 알림, 배포 도메인 지식을 갖지 않습니다. 모든 용량은
+문자열 key를 가진 generic resource vector로 표현합니다.
 """
 
 from __future__ import annotations
