@@ -74,7 +74,11 @@ fn my_function(arg_name: &str) -> Result<SomeType> { ... }
    - Numeric literals — explain what they represent (e.g., `// 50 MiB`)
    - Complex iterator chains — explain each step
    - Regex patterns or magic strings — explain what they match
-5. **For JavaScript/HTML** in `viewer.html`, use JSDoc-style comments:
+5. **반복문 / 조건문 블록 주석 강제**:
+   - 모든 `for`, `while`, `loop`, iterator loop, `if`, `elif`, `else`, `else if`, `match` / `case` 블록은 블록 바로 위 또는 블록 내부 첫 줄에 한국어 inline comment를 반드시 둔다.
+   - 주석은 해당 블록의 의도, 분기 조건의 의미, 중요한 side effect 또는 상태 변화를 설명해야 한다.
+   - 반복문이나 조건문이 자명해 보인다는 이유로 주석을 생략하지 않는다. 사람이 리뷰할 수 있도록 판단 이유를 명시한다.
+6. **For JavaScript/HTML** in `viewer.html`, use JSDoc-style comments:
    ```javascript
    /**
     * Fetches on-chain trade details by transaction hash.
@@ -87,7 +91,7 @@ fn my_function(arg_name: &str) -> Result<SomeType> { ... }
     */
    async function showTradeDetail(txHash) { ... }
    ```
-6. **Hex / byte manipulation** must always explain:
+7. **Hex / byte manipulation** must always explain:
    - What the hex value represents (event signature, address, amount, etc.)
    - Why specific slice ranges are used (e.g., `data[62..64]` = side byte at offset 31)
    - The byte width of each field (u8, u256, bytes32, etc.)
