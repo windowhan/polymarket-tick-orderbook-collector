@@ -1,0 +1,1050 @@
+{
+  "source_index": "https://docs.polymarket.com/llms.txt",
+  "source_sitemap": "https://docs.polymarket.com/sitemap.xml",
+  "crawled_at": "2026-06-18T23:37:59Z",
+  "page_count": 173,
+  "downloaded_count": 173,
+  "failure_count": 0,
+  "sitemap_error": null,
+  "pages": [
+    {
+      "title": "Negative Risk Markets",
+      "url": "https://docs.polymarket.com/advanced/neg-risk.md",
+      "path": "advanced/neg-risk.md",
+      "description": "Capital-efficient trading for multi-outcome events"
+    },
+    {
+      "title": "Authentication",
+      "url": "https://docs.polymarket.com/api-reference/authentication.md",
+      "path": "api-reference/authentication.md",
+      "description": "How to authenticate requests to the CLOB API"
+    },
+    {
+      "title": "Create bridge addresses",
+      "url": "https://docs.polymarket.com/api-reference/bridge/create-bridge-addresses.md",
+      "path": "api-reference/bridge/create-bridge-addresses.md",
+      "description": ""
+    },
+    {
+      "title": "Create withdrawal addresses",
+      "url": "https://docs.polymarket.com/api-reference/bridge/create-withdrawal-addresses.md",
+      "path": "api-reference/bridge/create-withdrawal-addresses.md",
+      "description": ""
+    },
+    {
+      "title": "Get a quote",
+      "url": "https://docs.polymarket.com/api-reference/bridge/get-a-quote.md",
+      "path": "api-reference/bridge/get-a-quote.md",
+      "description": ""
+    },
+    {
+      "title": "Get supported assets",
+      "url": "https://docs.polymarket.com/api-reference/bridge/get-supported-assets.md",
+      "path": "api-reference/bridge/get-supported-assets.md",
+      "description": ""
+    },
+    {
+      "title": "Get transaction status",
+      "url": "https://docs.polymarket.com/api-reference/bridge/get-transaction-status.md",
+      "path": "api-reference/bridge/get-transaction-status.md",
+      "description": ""
+    },
+    {
+      "title": "Get aggregated builder leaderboard",
+      "url": "https://docs.polymarket.com/api-reference/builders/get-aggregated-builder-leaderboard.md",
+      "path": "api-reference/builders/get-aggregated-builder-leaderboard.md",
+      "description": ""
+    },
+    {
+      "title": "Get daily builder volume time-series",
+      "url": "https://docs.polymarket.com/api-reference/builders/get-daily-builder-volume-time-series.md",
+      "path": "api-reference/builders/get-daily-builder-volume-time-series.md",
+      "description": ""
+    },
+    {
+      "title": "Clients & SDKs",
+      "url": "https://docs.polymarket.com/api-reference/clients-sdks.md",
+      "path": "api-reference/clients-sdks.md",
+      "description": "Official open-source libraries for interacting with Polymarket"
+    },
+    {
+      "title": "Get combo markets",
+      "url": "https://docs.polymarket.com/api-reference/combo-markets/get-combo-markets.md",
+      "path": "api-reference/combo-markets/get-combo-markets.md",
+      "description": "Returns active markets that can be used as combo legs, ordered by volume descending. This endpoint is public and does not require CLOB authentication."
+    },
+    {
+      "title": "Get comments by comment id",
+      "url": "https://docs.polymarket.com/api-reference/comments/get-comments-by-comment-id.md",
+      "path": "api-reference/comments/get-comments-by-comment-id.md",
+      "description": ""
+    },
+    {
+      "title": "Get comments by user address",
+      "url": "https://docs.polymarket.com/api-reference/comments/get-comments-by-user-address.md",
+      "path": "api-reference/comments/get-comments-by-user-address.md",
+      "description": ""
+    },
+    {
+      "title": "List comments",
+      "url": "https://docs.polymarket.com/api-reference/comments/list-comments.md",
+      "path": "api-reference/comments/list-comments.md",
+      "description": ""
+    },
+    {
+      "title": "Get closed positions for a user",
+      "url": "https://docs.polymarket.com/api-reference/core/get-closed-positions-for-a-user.md",
+      "path": "api-reference/core/get-closed-positions-for-a-user.md",
+      "description": ""
+    },
+    {
+      "title": "Get current positions for a user",
+      "url": "https://docs.polymarket.com/api-reference/core/get-current-positions-for-a-user.md",
+      "path": "api-reference/core/get-current-positions-for-a-user.md",
+      "description": ""
+    },
+    {
+      "title": "Get positions for a market",
+      "url": "https://docs.polymarket.com/api-reference/core/get-positions-for-a-market.md",
+      "path": "api-reference/core/get-positions-for-a-market.md",
+      "description": ""
+    },
+    {
+      "title": "Get top holders for markets",
+      "url": "https://docs.polymarket.com/api-reference/core/get-top-holders-for-markets.md",
+      "path": "api-reference/core/get-top-holders-for-markets.md",
+      "description": ""
+    },
+    {
+      "title": "Get total value of a user's positions",
+      "url": "https://docs.polymarket.com/api-reference/core/get-total-value-of-a-users-positions.md",
+      "path": "api-reference/core/get-total-value-of-a-users-positions.md",
+      "description": ""
+    },
+    {
+      "title": "Get trader leaderboard rankings",
+      "url": "https://docs.polymarket.com/api-reference/core/get-trader-leaderboard-rankings.md",
+      "path": "api-reference/core/get-trader-leaderboard-rankings.md",
+      "description": ""
+    },
+    {
+      "title": "Get trades for a user or markets",
+      "url": "https://docs.polymarket.com/api-reference/core/get-trades-for-a-user-or-markets.md",
+      "path": "api-reference/core/get-trades-for-a-user-or-markets.md",
+      "description": ""
+    },
+    {
+      "title": "Get user activity",
+      "url": "https://docs.polymarket.com/api-reference/core/get-user-activity.md",
+      "path": "api-reference/core/get-user-activity.md",
+      "description": ""
+    },
+    {
+      "title": "Get user combo activity",
+      "url": "https://docs.polymarket.com/api-reference/core/get-user-combo-activity.md",
+      "path": "api-reference/core/get-user-combo-activity.md",
+      "description": "Combo lifecycle and redeem events (split / merge / convert / compress / wrap / unwrap / redeem) for a user, with per-leg breakdown. The combo counterpart to /activity trade rows. Also available at /v1/data/user/{address}/activity/combos (address from the path)."
+    },
+    {
+      "title": "Get user combo positions",
+      "url": "https://docs.polymarket.com/api-reference/core/get-user-combo-positions.md",
+      "path": "api-reference/core/get-user-combo-positions.md",
+      "description": "Combinatorial (multi-market) positions held by a user, with per-leg breakdown. Also available at /v1/data/user/{address}/positions/combos (address from the path)."
+    },
+    {
+      "title": "Get midpoint price",
+      "url": "https://docs.polymarket.com/api-reference/data/get-midpoint-price.md",
+      "path": "api-reference/data/get-midpoint-price.md",
+      "description": "Retrieves the midpoint price for a specific token ID. The midpoint is calculated as the average of the best bid and best ask prices."
+    },
+    {
+      "title": "Get server time",
+      "url": "https://docs.polymarket.com/api-reference/data/get-server-time.md",
+      "path": "api-reference/data/get-server-time.md",
+      "description": "Returns the current Unix timestamp of the server. This can be used to synchronize client time with server time."
+    },
+    {
+      "title": "Get event by id",
+      "url": "https://docs.polymarket.com/api-reference/events/get-event-by-id.md",
+      "path": "api-reference/events/get-event-by-id.md",
+      "description": ""
+    },
+    {
+      "title": "Get event by slug",
+      "url": "https://docs.polymarket.com/api-reference/events/get-event-by-slug.md",
+      "path": "api-reference/events/get-event-by-slug.md",
+      "description": ""
+    },
+    {
+      "title": "Get event tags",
+      "url": "https://docs.polymarket.com/api-reference/events/get-event-tags.md",
+      "path": "api-reference/events/get-event-tags.md",
+      "description": ""
+    },
+    {
+      "title": "List events",
+      "url": "https://docs.polymarket.com/api-reference/events/list-events.md",
+      "path": "api-reference/events/list-events.md",
+      "description": ""
+    },
+    {
+      "title": "List events (keyset pagination)",
+      "url": "https://docs.polymarket.com/api-reference/events/list-events-keyset-pagination.md",
+      "path": "api-reference/events/list-events-keyset-pagination.md",
+      "description": "Returns events using cursor-based (keyset) pagination for stable, efficient paging through large result sets. Use `next_cursor` from each response as `after_cursor` in the next request. The `offset` parameter is explicitly rejected; use `after_cursor` instead."
+    },
+    {
+      "title": "Geographic Restrictions",
+      "url": "https://docs.polymarket.com/api-reference/geoblock.md",
+      "path": "api-reference/geoblock.md",
+      "description": "Check geographic restrictions before placing orders on the Polymarket API"
+    },
+    {
+      "title": "Introduction",
+      "url": "https://docs.polymarket.com/api-reference/introduction.md",
+      "path": "api-reference/introduction.md",
+      "description": "Overview of the Polymarket APIs"
+    },
+    {
+      "title": "Cancel a quote",
+      "url": "https://docs.polymarket.com/api-reference/maker/cancel-a-quote.md",
+      "path": "api-reference/maker/cancel-a-quote.md",
+      "description": "Cancel an active maker quote before it is selected. Requires CLOB L2 authentication for the maker role. `signer_address` and `maker_address` must match the authenticated identity."
+    },
+    {
+      "title": "Confirm or decline last look",
+      "url": "https://docs.polymarket.com/api-reference/maker/confirm-or-decline-last-look.md",
+      "path": "api-reference/maker/confirm-or-decline-last-look.md",
+      "description": "Respond to a last-look confirmation request for a selected quote. Requires CLOB L2 authentication for the maker role. `decision` must be `CONFIRM` or `DECLINE`."
+    },
+    {
+      "title": "Submit a quote",
+      "url": "https://docs.polymarket.com/api-reference/maker/submit-a-quote.md",
+      "path": "api-reference/maker/submit-a-quote.md",
+      "description": "Submit a signed maker quote for an active RFQ. Requires CLOB L2 authentication for the maker role."
+    },
+    {
+      "title": "Get fee rate",
+      "url": "https://docs.polymarket.com/api-reference/market-data/get-fee-rate.md",
+      "path": "api-reference/market-data/get-fee-rate.md",
+      "description": "Retrieves the base fee rate for a specific token ID. The fee rate can be provided either as a query parameter or as a path parameter."
+    },
+    {
+      "title": "Get fee rate by path parameter",
+      "url": "https://docs.polymarket.com/api-reference/market-data/get-fee-rate-by-path-parameter.md",
+      "path": "api-reference/market-data/get-fee-rate-by-path-parameter.md",
+      "description": "Retrieves the base fee rate for a specific token ID using the token ID as a path parameter."
+    },
+    {
+      "title": "Get last trade price",
+      "url": "https://docs.polymarket.com/api-reference/market-data/get-last-trade-price.md",
+      "path": "api-reference/market-data/get-last-trade-price.md",
+      "description": "Retrieves the last trade price and side for a specific token ID. Returns default values of \"0.5\" for price and empty string for side if no trades found."
+    },
+    {
+      "title": "Get last trade prices (query parameters)",
+      "url": "https://docs.polymarket.com/api-reference/market-data/get-last-trade-prices-query-parameters.md",
+      "path": "api-reference/market-data/get-last-trade-prices-query-parameters.md",
+      "description": "Retrieves last trade prices for multiple token IDs using query parameters. Maximum 500 token IDs can be requested per call."
+    },
+    {
+      "title": "Get last trade prices (request body)",
+      "url": "https://docs.polymarket.com/api-reference/market-data/get-last-trade-prices-request-body.md",
+      "path": "api-reference/market-data/get-last-trade-prices-request-body.md",
+      "description": "Retrieves last trade prices for multiple token IDs using a request body. Maximum 500 token IDs can be requested per call."
+    },
+    {
+      "title": "Get market price",
+      "url": "https://docs.polymarket.com/api-reference/market-data/get-market-price.md",
+      "path": "api-reference/market-data/get-market-price.md",
+      "description": "Retrieves the best market price for a specific token ID and side (bid or ask). Returns the best bid price for BUY side or best ask price for SELL side."
+    },
+    {
+      "title": "Get market prices (query parameters)",
+      "url": "https://docs.polymarket.com/api-reference/market-data/get-market-prices-query-parameters.md",
+      "path": "api-reference/market-data/get-market-prices-query-parameters.md",
+      "description": "Retrieves market prices for multiple token IDs and sides using query parameters."
+    },
+    {
+      "title": "Get market prices (request body)",
+      "url": "https://docs.polymarket.com/api-reference/market-data/get-market-prices-request-body.md",
+      "path": "api-reference/market-data/get-market-prices-request-body.md",
+      "description": "Retrieves market prices for multiple token IDs and sides using a request body. Each request must include both token_id and side."
+    },
+    {
+      "title": "Get midpoint prices (query parameters)",
+      "url": "https://docs.polymarket.com/api-reference/market-data/get-midpoint-prices-query-parameters.md",
+      "path": "api-reference/market-data/get-midpoint-prices-query-parameters.md",
+      "description": "Retrieves midpoint prices for multiple token IDs using query parameters. The midpoint is calculated as the average of the best bid and best ask prices."
+    },
+    {
+      "title": "Get midpoint prices (request body)",
+      "url": "https://docs.polymarket.com/api-reference/market-data/get-midpoint-prices-request-body.md",
+      "path": "api-reference/market-data/get-midpoint-prices-request-body.md",
+      "description": "Retrieves midpoint prices for multiple token IDs using a request body. The midpoint is calculated as the average of the best bid and best ask prices."
+    },
+    {
+      "title": "Get order book",
+      "url": "https://docs.polymarket.com/api-reference/market-data/get-order-book.md",
+      "path": "api-reference/market-data/get-order-book.md",
+      "description": "Retrieves the order book summary for a specific token ID. Includes bids, asks, market details, and last trade price."
+    },
+    {
+      "title": "Get order books (request body)",
+      "url": "https://docs.polymarket.com/api-reference/market-data/get-order-books-request-body.md",
+      "path": "api-reference/market-data/get-order-books-request-body.md",
+      "description": "Retrieves order book summaries for multiple token IDs using a request body."
+    },
+    {
+      "title": "Get spread",
+      "url": "https://docs.polymarket.com/api-reference/market-data/get-spread.md",
+      "path": "api-reference/market-data/get-spread.md",
+      "description": "Retrieves the spread for a specific token ID. The spread is the difference between the best ask and best bid prices."
+    },
+    {
+      "title": "Get spreads",
+      "url": "https://docs.polymarket.com/api-reference/market-data/get-spreads.md",
+      "path": "api-reference/market-data/get-spreads.md",
+      "description": "Retrieves spreads for multiple token IDs. The spread is the difference between the best ask and best bid prices."
+    },
+    {
+      "title": "Get tick size",
+      "url": "https://docs.polymarket.com/api-reference/market-data/get-tick-size.md",
+      "path": "api-reference/market-data/get-tick-size.md",
+      "description": "Retrieves the minimum tick size (price increment) for a specific token ID. The tick size can be provided either as a query parameter or as a path parameter."
+    },
+    {
+      "title": "Get tick size by path parameter",
+      "url": "https://docs.polymarket.com/api-reference/market-data/get-tick-size-by-path-parameter.md",
+      "path": "api-reference/market-data/get-tick-size-by-path-parameter.md",
+      "description": "Retrieves the minimum tick size (price increment) for a specific token ID using the token ID as a path parameter."
+    },
+    {
+      "title": "Get batch prices history",
+      "url": "https://docs.polymarket.com/api-reference/markets/get-batch-prices-history.md",
+      "path": "api-reference/markets/get-batch-prices-history.md",
+      "description": "Retrieve historical price data for multiple markets in a single request."
+    },
+    {
+      "title": "Get CLOB market info",
+      "url": "https://docs.polymarket.com/api-reference/markets/get-clob-market-info.md",
+      "path": "api-reference/markets/get-clob-market-info.md",
+      "description": "Returns all CLOB-level parameters for a market in a single call — tokens, tick size, base fees, rewards, RFQ status, and fee details."
+    },
+    {
+      "title": "Get market by id",
+      "url": "https://docs.polymarket.com/api-reference/markets/get-market-by-id.md",
+      "path": "api-reference/markets/get-market-by-id.md",
+      "description": ""
+    },
+    {
+      "title": "Get market by slug",
+      "url": "https://docs.polymarket.com/api-reference/markets/get-market-by-slug.md",
+      "path": "api-reference/markets/get-market-by-slug.md",
+      "description": ""
+    },
+    {
+      "title": "Get market by token",
+      "url": "https://docs.polymarket.com/api-reference/markets/get-market-by-token.md",
+      "path": "api-reference/markets/get-market-by-token.md",
+      "description": "Returns the parent market for a given token ID. Useful when you have a token ID and need to resolve its parent market without knowing the condition ID in advance."
+    },
+    {
+      "title": "Get market tags by id",
+      "url": "https://docs.polymarket.com/api-reference/markets/get-market-tags-by-id.md",
+      "path": "api-reference/markets/get-market-tags-by-id.md",
+      "description": ""
+    },
+    {
+      "title": "Get prices history",
+      "url": "https://docs.polymarket.com/api-reference/markets/get-prices-history.md",
+      "path": "api-reference/markets/get-prices-history.md",
+      "description": "Retrieve historical price data for a market."
+    },
+    {
+      "title": "Get sampling markets",
+      "url": "https://docs.polymarket.com/api-reference/markets/get-sampling-markets.md",
+      "path": "api-reference/markets/get-sampling-markets.md",
+      "description": ""
+    },
+    {
+      "title": "Get sampling simplified markets",
+      "url": "https://docs.polymarket.com/api-reference/markets/get-sampling-simplified-markets.md",
+      "path": "api-reference/markets/get-sampling-simplified-markets.md",
+      "description": ""
+    },
+    {
+      "title": "Get simplified markets",
+      "url": "https://docs.polymarket.com/api-reference/markets/get-simplified-markets.md",
+      "path": "api-reference/markets/get-simplified-markets.md",
+      "description": ""
+    },
+    {
+      "title": "List markets",
+      "url": "https://docs.polymarket.com/api-reference/markets/list-markets.md",
+      "path": "api-reference/markets/list-markets.md",
+      "description": ""
+    },
+    {
+      "title": "List markets (keyset pagination)",
+      "url": "https://docs.polymarket.com/api-reference/markets/list-markets-keyset-pagination.md",
+      "path": "api-reference/markets/list-markets-keyset-pagination.md",
+      "description": "Returns markets using cursor-based (keyset) pagination for stable, efficient paging through large result sets. Use `next_cursor` from each response as `after_cursor` in the next request. The `offset` parameter is explicitly rejected; use `after_cursor` instead."
+    },
+    {
+      "title": "Download an accounting snapshot (ZIP of CSVs)",
+      "url": "https://docs.polymarket.com/api-reference/misc/download-an-accounting-snapshot-zip-of-csvs.md",
+      "path": "api-reference/misc/download-an-accounting-snapshot-zip-of-csvs.md",
+      "description": ""
+    },
+    {
+      "title": "Get live volume for an event",
+      "url": "https://docs.polymarket.com/api-reference/misc/get-live-volume-for-an-event.md",
+      "path": "api-reference/misc/get-live-volume-for-an-event.md",
+      "description": ""
+    },
+    {
+      "title": "Get open interest",
+      "url": "https://docs.polymarket.com/api-reference/misc/get-open-interest.md",
+      "path": "api-reference/misc/get-open-interest.md",
+      "description": ""
+    },
+    {
+      "title": "Get total markets a user has traded",
+      "url": "https://docs.polymarket.com/api-reference/misc/get-total-markets-a-user-has-traded.md",
+      "path": "api-reference/misc/get-total-markets-a-user-has-traded.md",
+      "description": ""
+    },
+    {
+      "title": "Get public profile by wallet address",
+      "url": "https://docs.polymarket.com/api-reference/profiles/get-public-profile-by-wallet-address.md",
+      "path": "api-reference/profiles/get-public-profile-by-wallet-address.md",
+      "description": ""
+    },
+    {
+      "title": "Rate Limits",
+      "url": "https://docs.polymarket.com/api-reference/rate-limits.md",
+      "path": "api-reference/rate-limits.md",
+      "description": "API rate limits for all Polymarket endpoints"
+    },
+    {
+      "title": "Get current rebated fees for a maker",
+      "url": "https://docs.polymarket.com/api-reference/rebates/get-current-rebated-fees-for-a-maker.md",
+      "path": "api-reference/rebates/get-current-rebated-fees-for-a-maker.md",
+      "description": "Returns the current rebated fees for a maker address on a given date."
+    },
+    {
+      "title": "Get all relayer API keys",
+      "url": "https://docs.polymarket.com/api-reference/relayer-api-keys/get-all-relayer-api-keys.md",
+      "path": "api-reference/relayer-api-keys/get-all-relayer-api-keys.md",
+      "description": "Returns all relayer API keys for the authenticated address. Auth allowed: Gamma auth or Relayer API key auth (`RELAYER_API_KEY` + `RELAYER_API_KEY_ADDRESS`)."
+    },
+    {
+      "title": "Check if a wallet is deployed",
+      "url": "https://docs.polymarket.com/api-reference/relayer/check-if-a-wallet-is-deployed.md",
+      "path": "api-reference/relayer/check-if-a-wallet-is-deployed.md",
+      "description": "Returns whether the wallet at the given address is deployed onchain."
+    },
+    {
+      "title": "Get a transaction by ID",
+      "url": "https://docs.polymarket.com/api-reference/relayer/get-a-transaction-by-id.md",
+      "path": "api-reference/relayer/get-a-transaction-by-id.md",
+      "description": "Gets a transaction submitted to the Relayer. Takes in a required transaction ID as a query parameter."
+    },
+    {
+      "title": "Get current nonce for a user",
+      "url": "https://docs.polymarket.com/api-reference/relayer/get-current-nonce-for-a-user.md",
+      "path": "api-reference/relayer/get-current-nonce-for-a-user.md",
+      "description": "Gets the current Proxy or Safe nonce for a user. Takes in the user's signer address and the type of nonce to retrieve."
+    },
+    {
+      "title": "Get recent transactions for a user",
+      "url": "https://docs.polymarket.com/api-reference/relayer/get-recent-transactions-for-a-user.md",
+      "path": "api-reference/relayer/get-recent-transactions-for-a-user.md",
+      "description": "Gets the most recent transactions submitted to the Relayer, owned by a specific user. Authenticated using Builder API Keys or Relayer API Keys."
+    },
+    {
+      "title": "Get relayer address and nonce",
+      "url": "https://docs.polymarket.com/api-reference/relayer/get-relayer-address-and-nonce.md",
+      "path": "api-reference/relayer/get-relayer-address-and-nonce.md",
+      "description": "Fetches the relayer address and nonce for a specific user. Takes in the user's signer address and the type of nonce to retrieve."
+    },
+    {
+      "title": "Submit a transaction",
+      "url": "https://docs.polymarket.com/api-reference/relayer/submit-a-transaction.md",
+      "path": "api-reference/relayer/submit-a-transaction.md",
+      "description": "Submit a transaction request to the Relayer. Authenticated using Builder API Keys or Relayer API Keys."
+    },
+    {
+      "title": "Get current active rewards configurations",
+      "url": "https://docs.polymarket.com/api-reference/rewards/get-current-active-rewards-configurations.md",
+      "path": "api-reference/rewards/get-current-active-rewards-configurations.md",
+      "description": "Returns all current active rewards configurations grouped by market."
+    },
+    {
+      "title": "Get earnings for user by date",
+      "url": "https://docs.polymarket.com/api-reference/rewards/get-earnings-for-user-by-date.md",
+      "path": "api-reference/rewards/get-earnings-for-user-by-date.md",
+      "description": "Returns an array of user earnings per market for a provided day."
+    },
+    {
+      "title": "Get multiple markets with rewards",
+      "url": "https://docs.polymarket.com/api-reference/rewards/get-multiple-markets-with-rewards.md",
+      "path": "api-reference/rewards/get-multiple-markets-with-rewards.md",
+      "description": "Returns a list of active markets with their reward configurations. Supports text search, tag filtering, numeric filters, and sorting."
+    },
+    {
+      "title": "Get raw rewards for a specific market",
+      "url": "https://docs.polymarket.com/api-reference/rewards/get-raw-rewards-for-a-specific-market.md",
+      "path": "api-reference/rewards/get-raw-rewards-for-a-specific-market.md",
+      "description": "Returns an array of present and future rewards configured on a market."
+    },
+    {
+      "title": "Get reward percentages for user",
+      "url": "https://docs.polymarket.com/api-reference/rewards/get-reward-percentages-for-user.md",
+      "path": "api-reference/rewards/get-reward-percentages-for-user.md",
+      "description": "Returns the real-time percentages of rewards that a user is earning per market."
+    },
+    {
+      "title": "Get total earnings for user by date",
+      "url": "https://docs.polymarket.com/api-reference/rewards/get-total-earnings-for-user-by-date.md",
+      "path": "api-reference/rewards/get-total-earnings-for-user-by-date.md",
+      "description": "Returns the summed total rewards earnings for a user on a provided day, grouped by asset address."
+    },
+    {
+      "title": "Get user earnings and markets configuration",
+      "url": "https://docs.polymarket.com/api-reference/rewards/get-user-earnings-and-markets-configuration.md",
+      "path": "api-reference/rewards/get-user-earnings-and-markets-configuration.md",
+      "description": "Returns an array of current rewards including user earnings and live percentages per market for a provided day."
+    },
+    {
+      "title": "Search markets, events, and profiles",
+      "url": "https://docs.polymarket.com/api-reference/search/search-markets-events-and-profiles.md",
+      "path": "api-reference/search/search-markets-events-and-profiles.md",
+      "description": ""
+    },
+    {
+      "title": "Get series by id",
+      "url": "https://docs.polymarket.com/api-reference/series/get-series-by-id.md",
+      "path": "api-reference/series/get-series-by-id.md",
+      "description": ""
+    },
+    {
+      "title": "List series",
+      "url": "https://docs.polymarket.com/api-reference/series/list-series.md",
+      "path": "api-reference/series/list-series.md",
+      "description": ""
+    },
+    {
+      "title": "Get sports metadata information",
+      "url": "https://docs.polymarket.com/api-reference/sports/get-sports-metadata-information.md",
+      "path": "api-reference/sports/get-sports-metadata-information.md",
+      "description": ""
+    },
+    {
+      "title": "Get valid sports market types",
+      "url": "https://docs.polymarket.com/api-reference/sports/get-valid-sports-market-types.md",
+      "path": "api-reference/sports/get-valid-sports-market-types.md",
+      "description": ""
+    },
+    {
+      "title": "List teams",
+      "url": "https://docs.polymarket.com/api-reference/sports/list-teams.md",
+      "path": "api-reference/sports/list-teams.md",
+      "description": ""
+    },
+    {
+      "title": "Get related tags (relationships) by tag id",
+      "url": "https://docs.polymarket.com/api-reference/tags/get-related-tags-relationships-by-tag-id.md",
+      "path": "api-reference/tags/get-related-tags-relationships-by-tag-id.md",
+      "description": ""
+    },
+    {
+      "title": "Get related tags (relationships) by tag slug",
+      "url": "https://docs.polymarket.com/api-reference/tags/get-related-tags-relationships-by-tag-slug.md",
+      "path": "api-reference/tags/get-related-tags-relationships-by-tag-slug.md",
+      "description": ""
+    },
+    {
+      "title": "Get tag by id",
+      "url": "https://docs.polymarket.com/api-reference/tags/get-tag-by-id.md",
+      "path": "api-reference/tags/get-tag-by-id.md",
+      "description": ""
+    },
+    {
+      "title": "Get tag by slug",
+      "url": "https://docs.polymarket.com/api-reference/tags/get-tag-by-slug.md",
+      "path": "api-reference/tags/get-tag-by-slug.md",
+      "description": ""
+    },
+    {
+      "title": "Get tags related to a tag id",
+      "url": "https://docs.polymarket.com/api-reference/tags/get-tags-related-to-a-tag-id.md",
+      "path": "api-reference/tags/get-tags-related-to-a-tag-id.md",
+      "description": ""
+    },
+    {
+      "title": "Get tags related to a tag slug",
+      "url": "https://docs.polymarket.com/api-reference/tags/get-tags-related-to-a-tag-slug.md",
+      "path": "api-reference/tags/get-tags-related-to-a-tag-slug.md",
+      "description": ""
+    },
+    {
+      "title": "List tags",
+      "url": "https://docs.polymarket.com/api-reference/tags/list-tags.md",
+      "path": "api-reference/tags/list-tags.md",
+      "description": ""
+    },
+    {
+      "title": "Cancel all orders",
+      "url": "https://docs.polymarket.com/api-reference/trade/cancel-all-orders.md",
+      "path": "api-reference/trade/cancel-all-orders.md",
+      "description": "Cancels all open orders for the authenticated user. Works even in cancel-only mode."
+    },
+    {
+      "title": "Cancel multiple orders",
+      "url": "https://docs.polymarket.com/api-reference/trade/cancel-multiple-orders.md",
+      "path": "api-reference/trade/cancel-multiple-orders.md",
+      "description": "Cancels multiple orders by their IDs. Maximum 1000 orders per request. Duplicate order IDs in the request are automatically ignored. Works even in cancel-only mode."
+    },
+    {
+      "title": "Cancel orders for a market",
+      "url": "https://docs.polymarket.com/api-reference/trade/cancel-orders-for-a-market.md",
+      "path": "api-reference/trade/cancel-orders-for-a-market.md",
+      "description": "Cancels all open orders for the authenticated user in a specific market (condition) and asset. Works even in cancel-only mode."
+    },
+    {
+      "title": "Cancel single order",
+      "url": "https://docs.polymarket.com/api-reference/trade/cancel-single-order.md",
+      "path": "api-reference/trade/cancel-single-order.md",
+      "description": "Cancels a single order by its ID. Works even in cancel-only mode."
+    },
+    {
+      "title": "Get builder trades",
+      "url": "https://docs.polymarket.com/api-reference/trade/get-builder-trades.md",
+      "path": "api-reference/trade/get-builder-trades.md",
+      "description": "Retrieves trades attributed to a builder code."
+    },
+    {
+      "title": "Get order scoring status",
+      "url": "https://docs.polymarket.com/api-reference/trade/get-order-scoring-status.md",
+      "path": "api-reference/trade/get-order-scoring-status.md",
+      "description": "Checks if a specific order is currently scoring for rewards."
+    },
+    {
+      "title": "Get single order by ID",
+      "url": "https://docs.polymarket.com/api-reference/trade/get-single-order-by-id.md",
+      "path": "api-reference/trade/get-single-order-by-id.md",
+      "description": "Retrieves a specific order by its ID (order hash) for the authenticated user. Builder-authenticated clients can also use this endpoint to retrieve orders attributed to their builder account."
+    },
+    {
+      "title": "Get trades",
+      "url": "https://docs.polymarket.com/api-reference/trade/get-trades.md",
+      "path": "api-reference/trade/get-trades.md",
+      "description": "Retrieves trades for the authenticated user. Returns paginated results. Requires readonly or level 2 API key authentication."
+    },
+    {
+      "title": "Get user orders",
+      "url": "https://docs.polymarket.com/api-reference/trade/get-user-orders.md",
+      "path": "api-reference/trade/get-user-orders.md",
+      "description": "Retrieves open orders for the authenticated user. Returns paginated results. Builder-authenticated clients can also use this endpoint to retrieve orders attributed to their builder account."
+    },
+    {
+      "title": "Post a new order",
+      "url": "https://docs.polymarket.com/api-reference/trade/post-a-new-order.md",
+      "path": "api-reference/trade/post-a-new-order.md",
+      "description": "Creates a new order in the order book"
+    },
+    {
+      "title": "Post multiple orders",
+      "url": "https://docs.polymarket.com/api-reference/trade/post-multiple-orders.md",
+      "path": "api-reference/trade/post-multiple-orders.md",
+      "description": "Creates multiple new orders in the order book. Orders are processed in parallel. Maximum 15 orders per request."
+    },
+    {
+      "title": "Send heartbeat",
+      "url": "https://docs.polymarket.com/api-reference/trade/send-heartbeat.md",
+      "path": "api-reference/trade/send-heartbeat.md",
+      "description": "Sends a heartbeat signal to maintain active session status. If heartbeats are not sent regularly, all open orders for the user will be automatically canceled. This is useful for automated trading systems that need to ensure orders are canceled if the system becomes unresponsive."
+    },
+    {
+      "title": "Market Channel",
+      "url": "https://docs.polymarket.com/api-reference/wss/market.md",
+      "path": "api-reference/wss/market.md",
+      "description": "Public WebSocket for real-time orderbook, price, and market lifecycle updates."
+    },
+    {
+      "title": "Quoter Gateway",
+      "url": "https://docs.polymarket.com/api-reference/wss/rfq.md",
+      "path": "api-reference/wss/rfq.md",
+      "description": "Authenticated WebSocket for combinatorial RFQ quoters — receive requests, submit quotes, confirm last look, and track execution."
+    },
+    {
+      "title": "Sports Channel",
+      "url": "https://docs.polymarket.com/api-reference/wss/sports.md",
+      "path": "api-reference/wss/sports.md",
+      "description": "Public WebSocket for real-time sports match results."
+    },
+    {
+      "title": "User Channel",
+      "url": "https://docs.polymarket.com/api-reference/wss/user.md",
+      "path": "api-reference/wss/user.md",
+      "description": "Authenticated WebSocket for real-time order and trade updates."
+    },
+    {
+      "title": "Builder Code",
+      "url": "https://docs.polymarket.com/builders/api-keys.md",
+      "path": "builders/api-keys.md",
+      "description": "Your builder code for order attribution"
+    },
+    {
+      "title": "Builder Fees",
+      "url": "https://docs.polymarket.com/builders/fees.md",
+      "path": "builders/fees.md",
+      "description": "How builders earn fees on orders routed through their applications, and how to integrate."
+    },
+    {
+      "title": "Builder Program",
+      "url": "https://docs.polymarket.com/builders/overview.md",
+      "path": "builders/overview.md",
+      "description": "Build applications that route orders through Polymarket"
+    },
+    {
+      "title": "Tiers",
+      "url": "https://docs.polymarket.com/builders/tiers.md",
+      "path": "builders/tiers.md",
+      "description": "Rate limits, rewards, and how to upgrade"
+    },
+    {
+      "title": "Markets & Events",
+      "url": "https://docs.polymarket.com/concepts/markets-events.md",
+      "path": "concepts/markets-events.md",
+      "description": "Understanding the fundamental building blocks of Polymarket"
+    },
+    {
+      "title": "Order Lifecycle",
+      "url": "https://docs.polymarket.com/concepts/order-lifecycle.md",
+      "path": "concepts/order-lifecycle.md",
+      "description": "Understanding how orders flow from creation to settlement"
+    },
+    {
+      "title": "Positions & Tokens",
+      "url": "https://docs.polymarket.com/concepts/positions-tokens.md",
+      "path": "concepts/positions-tokens.md",
+      "description": "Understanding outcome tokens and how positions work on Polymarket"
+    },
+    {
+      "title": "Prices & Orderbook",
+      "url": "https://docs.polymarket.com/concepts/prices-orderbook.md",
+      "path": "concepts/prices-orderbook.md",
+      "description": "How prices work and how the order book enables peer-to-peer trading"
+    },
+    {
+      "title": "Polymarket USD",
+      "url": "https://docs.polymarket.com/concepts/pusd.md",
+      "path": "concepts/pusd.md",
+      "description": "pUSD — the collateral token used for all trading on Polymarket"
+    },
+    {
+      "title": "Resolution",
+      "url": "https://docs.polymarket.com/concepts/resolution.md",
+      "path": "concepts/resolution.md",
+      "description": "How markets are resolved and winning positions redeemed"
+    },
+    {
+      "title": "Overview",
+      "url": "https://docs.polymarket.com/dev-tooling.md",
+      "path": "dev-tooling.md",
+      "description": "Learn about Polymarket's developer tooling roadmap."
+    },
+    {
+      "title": "Python SDK",
+      "url": "https://docs.polymarket.com/dev-tooling/python.md",
+      "path": "dev-tooling/python.md",
+      "description": "Build with the unified Polymarket Python SDK."
+    },
+    {
+      "title": "TypeScript SDK",
+      "url": "https://docs.polymarket.com/dev-tooling/typescript.md",
+      "path": "dev-tooling/typescript.md",
+      "description": "Build with the unified Polymarket TypeScript SDK."
+    },
+    {
+      "title": "Overview",
+      "url": "https://docs.polymarket.com/index.md",
+      "path": "_root/index.md",
+      "description": "Build on the world's largest prediction market. Trade, integrate, and access real-time market data with the Polymarket API."
+    },
+    {
+      "title": "Fetching Markets",
+      "url": "https://docs.polymarket.com/market-data/fetching-markets.md",
+      "path": "market-data/fetching-markets.md",
+      "description": "Three strategies for discovering and querying markets"
+    },
+    {
+      "title": "Overview",
+      "url": "https://docs.polymarket.com/market-data/overview.md",
+      "path": "market-data/overview.md",
+      "description": "Fetch market data with no authentication required"
+    },
+    {
+      "title": "Market Channel",
+      "url": "https://docs.polymarket.com/market-data/websocket/market-channel.md",
+      "path": "market-data/websocket/market-channel.md",
+      "description": "Real-time orderbook, price, and trade data"
+    },
+    {
+      "title": "Overview",
+      "url": "https://docs.polymarket.com/market-data/websocket/overview.md",
+      "path": "market-data/websocket/overview.md",
+      "description": "Real-time market data and trading updates via WebSocket"
+    },
+    {
+      "title": "Real-Time Data Socket",
+      "url": "https://docs.polymarket.com/market-data/websocket/rtds.md",
+      "path": "market-data/websocket/rtds.md",
+      "description": "Stream comments, crypto prices, and equity prices via WebSocket"
+    },
+    {
+      "title": "Sports WebSocket",
+      "url": "https://docs.polymarket.com/market-data/websocket/sports.md",
+      "path": "market-data/websocket/sports.md",
+      "description": "Live sports scores and game state"
+    },
+    {
+      "title": "User Channel",
+      "url": "https://docs.polymarket.com/market-data/websocket/user-channel.md",
+      "path": "market-data/websocket/user-channel.md",
+      "description": "Authenticated order and trade updates"
+    },
+    {
+      "title": "Combos",
+      "url": "https://docs.polymarket.com/market-makers/combos.md",
+      "path": "market-makers/combos.md",
+      "description": "Build a market maker integration for pricing and executing Combos"
+    },
+    {
+      "title": "Getting Started",
+      "url": "https://docs.polymarket.com/market-makers/getting-started.md",
+      "path": "market-makers/getting-started.md",
+      "description": "One-time setup for market making on Polymarket"
+    },
+    {
+      "title": "Inventory Management",
+      "url": "https://docs.polymarket.com/market-makers/inventory.md",
+      "path": "market-makers/inventory.md",
+      "description": "Managing outcome token inventory for market making"
+    },
+    {
+      "title": "Liquidity Rewards",
+      "url": "https://docs.polymarket.com/market-makers/liquidity-rewards.md",
+      "path": "market-makers/liquidity-rewards.md",
+      "description": "Earn rewards for providing liquidity on Polymarket"
+    },
+    {
+      "title": "Maker Rebates Program",
+      "url": "https://docs.polymarket.com/market-makers/maker-rebates.md",
+      "path": "market-makers/maker-rebates.md",
+      "description": "Earn daily pUSD rebates by providing liquidity on Polymarket"
+    },
+    {
+      "title": "Overview",
+      "url": "https://docs.polymarket.com/market-makers/overview.md",
+      "path": "market-makers/overview.md",
+      "description": "Market making on Polymarket"
+    },
+    {
+      "title": "Trading",
+      "url": "https://docs.polymarket.com/market-makers/trading.md",
+      "path": "market-makers/trading.md",
+      "description": "Order entry, management, and best practices for market makers"
+    },
+    {
+      "title": "Polymarket 101",
+      "url": "https://docs.polymarket.com/polymarket-101.md",
+      "path": "polymarket-101.md",
+      "description": "An intro to Polymarket - the world's largest prediction market"
+    },
+    {
+      "title": "Quickstart",
+      "url": "https://docs.polymarket.com/quickstart.md",
+      "path": "quickstart.md",
+      "description": "Fetch a market and place your first order"
+    },
+    {
+      "title": "Data Resources",
+      "url": "https://docs.polymarket.com/resources/blockchain-data.md",
+      "path": "resources/blockchain-data.md",
+      "description": "Access Polymarket on-chain activity for data & analytics"
+    },
+    {
+      "title": "Contracts",
+      "url": "https://docs.polymarket.com/resources/contracts.md",
+      "path": "resources/contracts.md",
+      "description": "All Polymarket smart contract addresses, audits, and security resources"
+    },
+    {
+      "title": "Error Codes",
+      "url": "https://docs.polymarket.com/resources/error-codes.md",
+      "path": "resources/error-codes.md",
+      "description": "Complete reference for CLOB API error responses"
+    },
+    {
+      "title": "Referral Program",
+      "url": "https://docs.polymarket.com/resources/referral-program.md",
+      "path": "resources/referral-program.md",
+      "description": "Refer traders to Polymarket and earn daily pUSD rewards"
+    },
+    {
+      "title": "Deposit",
+      "url": "https://docs.polymarket.com/trading/bridge/deposit.md",
+      "path": "trading/bridge/deposit.md",
+      "description": "Bridge assets from any supported chain to fund your Polymarket account"
+    },
+    {
+      "title": "Quote",
+      "url": "https://docs.polymarket.com/trading/bridge/quote.md",
+      "path": "trading/bridge/quote.md",
+      "description": "Preview fees and estimated output for deposits and withdrawals"
+    },
+    {
+      "title": "Deposit Status",
+      "url": "https://docs.polymarket.com/trading/bridge/status.md",
+      "path": "trading/bridge/status.md",
+      "description": "Track the progress of your bridge deposits"
+    },
+    {
+      "title": "Supported Assets",
+      "url": "https://docs.polymarket.com/trading/bridge/supported-assets.md",
+      "path": "trading/bridge/supported-assets.md",
+      "description": "Chains and tokens supported for deposits to Polymarket"
+    },
+    {
+      "title": "Withdraw",
+      "url": "https://docs.polymarket.com/trading/bridge/withdraw.md",
+      "path": "trading/bridge/withdraw.md",
+      "description": "Bridge pUSD from Polymarket to any supported chain"
+    },
+    {
+      "title": "Builder Methods",
+      "url": "https://docs.polymarket.com/trading/clients/builder.md",
+      "path": "trading/clients/builder.md",
+      "description": "Methods for querying orders and trades attributed to your builder code."
+    },
+    {
+      "title": "L1 Methods",
+      "url": "https://docs.polymarket.com/trading/clients/l1.md",
+      "path": "trading/clients/l1.md",
+      "description": "These methods require a wallet signer (private key) but do not require user API credentials. Use these for initial setup."
+    },
+    {
+      "title": "L2 Methods",
+      "url": "https://docs.polymarket.com/trading/clients/l2.md",
+      "path": "trading/clients/l2.md",
+      "description": "These methods require user API credentials (L2 headers). Use these for placing trades and managing your positions."
+    },
+    {
+      "title": "Public Methods",
+      "url": "https://docs.polymarket.com/trading/clients/public.md",
+      "path": "trading/clients/public.md",
+      "description": "These methods can be called without a signer or user credentials. Use these for reading market data, prices, and order books."
+    },
+    {
+      "title": "Merge Tokens",
+      "url": "https://docs.polymarket.com/trading/ctf/merge.md",
+      "path": "trading/ctf/merge.md",
+      "description": "Convert outcome token pairs back to pUSD"
+    },
+    {
+      "title": "Conditional Token Framework",
+      "url": "https://docs.polymarket.com/trading/ctf/overview.md",
+      "path": "trading/ctf/overview.md",
+      "description": "Onchain token mechanics powering Polymarket positions"
+    },
+    {
+      "title": "Redeem Tokens",
+      "url": "https://docs.polymarket.com/trading/ctf/redeem.md",
+      "path": "trading/ctf/redeem.md",
+      "description": "Exchange winning tokens for pUSD after market resolution"
+    },
+    {
+      "title": "Split Tokens",
+      "url": "https://docs.polymarket.com/trading/ctf/split.md",
+      "path": "trading/ctf/split.md",
+      "description": "Convert pUSD into outcome token pairs"
+    },
+    {
+      "title": "Deposit Wallets",
+      "url": "https://docs.polymarket.com/trading/deposit-wallets.md",
+      "path": "trading/deposit-wallets.md",
+      "description": "Create deposit wallets, execute wallet actions, and place POLY_1271 orders"
+    },
+    {
+      "title": "Fees",
+      "url": "https://docs.polymarket.com/trading/fees.md",
+      "path": "trading/fees.md",
+      "description": "Understanding trading fees on Polymarket"
+    },
+    {
+      "title": "Gasless Transactions",
+      "url": "https://docs.polymarket.com/trading/gasless.md",
+      "path": "trading/gasless.md",
+      "description": "Execute onchain operations without paying gas fees"
+    },
+    {
+      "title": "Matching Engine Restarts",
+      "url": "https://docs.polymarket.com/trading/matching-engine.md",
+      "path": "trading/matching-engine.md",
+      "description": "Maintenance windows, restart handling, and post-restart post-only mode"
+    },
+    {
+      "title": "Orderbook",
+      "url": "https://docs.polymarket.com/trading/orderbook.md",
+      "path": "trading/orderbook.md",
+      "description": "Reading the orderbook, prices, spreads, and midpoints"
+    },
+    {
+      "title": "Order Attribution",
+      "url": "https://docs.polymarket.com/trading/orders/attribution.md",
+      "path": "trading/orders/attribution.md",
+      "description": "Attribute orders to your builder code for volume credit and fee rewards"
+    },
+    {
+      "title": "Cancel Order",
+      "url": "https://docs.polymarket.com/trading/orders/cancel.md",
+      "path": "trading/orders/cancel.md",
+      "description": "Cancel single, multiple, or all open orders"
+    },
+    {
+      "title": "Create Order",
+      "url": "https://docs.polymarket.com/trading/orders/create.md",
+      "path": "trading/orders/create.md",
+      "description": "Build, sign, and submit orders"
+    },
+    {
+      "title": "Overview",
+      "url": "https://docs.polymarket.com/trading/orders/overview.md",
+      "path": "trading/orders/overview.md",
+      "description": "Order types, tick sizes, and querying orders"
+    },
+    {
+      "title": "Overview",
+      "url": "https://docs.polymarket.com/trading/overview.md",
+      "path": "trading/overview.md",
+      "description": "Trading on the Polymarket CLOB"
+    },
+    {
+      "title": "Quickstart",
+      "url": "https://docs.polymarket.com/trading/quickstart.md",
+      "path": "trading/quickstart.md",
+      "description": "Place your first order on Polymarket"
+    },
+    {
+      "title": "Taker Rebate Program",
+      "url": "https://docs.polymarket.com/trading/taker-rebates.md",
+      "path": "trading/taker-rebates.md",
+      "description": "Climb the tiers and earn daily pUSD rebates as you trade"
+    }
+  ],
+  "failures": []
+}
