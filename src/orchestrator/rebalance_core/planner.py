@@ -41,6 +41,7 @@ class _CandidateResult:
 def build_assignment_plan(
     tasks: Iterable[TaskSpec],
     nodes: Iterable[NodeSpec],
+    previous_assignments: Iterable[Assignment] = (),
     adapter: AssignmentAdapter | None = None,
     context: PlannerContext | None = None,
 ) -> AssignmentPlanCore:
@@ -49,6 +50,7 @@ def build_assignment_plan(
     인자:
         tasks: 배정할 generic task iterable입니다.
         nodes: 배정 대상 generic node iterable입니다.
+        previous_assignments: 가능한 한 유지할 이전 generic assignment iterable입니다.
         adapter: task-node 제약과 선호 점수를 제공하는 adapter입니다.
         context: adapter callback과 runtime hint에 전달할 typed context입니다.
 
@@ -61,12 +63,24 @@ def build_assignment_plan(
     sorted_tasks = _sort_tasks(tasks)
     sorted_nodes = _sort_nodes(nodes)
     usage_by_node = _empty_usage_by_node(sorted_nodes)
-    assignments: list[Assignment] = []
+    task_by_id = _task_map(sorted_tasks)
+    node_by_id = _node_map(sorted_nodes)
+    assignments, assigned_task_ids = _keep_previous_assignments(
+        previous_assignments,
+        task_by_id,
+        node_by_id,
+        usage_by_node,
+        selected_adapter,
+        selected_context,
+    )
     unassigned: list[str] = []
     reasons: dict[str, tuple[str, ...]] = {}
 
     # task를 stable order로 순회해 입력 순서와 무관한 배정 결과를 만듭니다.
     for task in sorted_tasks:
+        # 이전 배정으로 이미 유지된 task는 새 candidate 탐색에서 제외합니다.
+        if task.task_id in assigned_task_ids:
+            continue
         result = _choose_node_for_new_task(
             task,
             sorted_nodes,
@@ -102,6 +116,60 @@ def _sort_nodes(nodes: Iterable[NodeSpec]) -> tuple[NodeSpec, ...]:
 
     return tuple(sorted(nodes, key=lambda node: node.node_id))
 
+
+
+
+def _task_map(tasks: tuple[TaskSpec, ...]) -> dict[str, TaskSpec]:
+    """task id로 task를 조회하는 map을 생성합니다."""
+
+    task_by_id: dict[str, TaskSpec] = {}
+    # sorted task를 순회해 이전 배정 검증에 사용할 lookup table을 만듭니다.
+    for task in tasks:
+        task_by_id[task.task_id] = task
+    return task_by_id
+
+
+def _node_map(nodes: tuple[NodeSpec, ...]) -> dict[str, NodeSpec]:
+    """node id로 node를 조회하는 map을 생성합니다."""
+
+    node_by_id: dict[str, NodeSpec] = {}
+    # sorted node를 순회해 이전 배정 검증에 사용할 lookup table을 만듭니다.
+    for node in nodes:
+        node_by_id[node.node_id] = node
+    return node_by_id
+
+
+def _keep_previous_assignments(
+    previous_assignments: Iterable[Assignment],
+    task_by_id: dict[str, TaskSpec],
+    node_by_id: dict[str, NodeSpec],
+    usage_by_node: dict[str, ResourceVector],
+    adapter: AssignmentAdapter,
+    context: PlannerContext,
+) -> tuple[list[Assignment], set[str]]:
+    """아직 유효한 이전 assignment를 먼저 유지합니다."""
+
+    kept_assignments: list[Assignment] = []
+    assigned_task_ids: set[str] = set()
+    sorted_previous = sorted(previous_assignments, key=lambda item: (item.task_id, item.node_id))
+    # 이전 assignment를 stable order로 확인해 가능한 배정을 선점합니다.
+    for assignment in sorted_previous:
+        # 같은 task가 중복으로 들어오면 첫 stable assignment만 유지합니다.
+        if assignment.task_id in assigned_task_ids:
+            continue
+        task = task_by_id.get(assignment.task_id)
+        node = node_by_id.get(assignment.node_id)
+        # task나 node가 사라졌으면 이전 배정은 더 이상 유효하지 않습니다.
+        if task is None or node is None:
+            continue
+        result = _candidate_for_node(task, node, usage_by_node[node.node_id], adapter, context)
+        # capacity나 adapter 제약을 깨는 이전 배정은 유지하지 않습니다.
+        if result.candidate is None:
+            continue
+        kept_assignments.append(assignment)
+        assigned_task_ids.add(assignment.task_id)
+        usage_by_node[node.node_id] = result.candidate.proposed_usage
+    return kept_assignments, assigned_task_ids
 
 def _empty_usage_by_node(nodes: tuple[NodeSpec, ...]) -> dict[str, ResourceVector]:
     """모든 node의 초기 resource usage map을 생성합니다."""
