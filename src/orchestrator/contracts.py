@@ -11,7 +11,9 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional
 
+from src.orchestrator.core.budget import BudgetPolicy, BudgetState
 from src.orchestrator.core.control import ControlState
+from src.orchestrator.infra.gcs.contracts import ObjectNotification, ProcessedObject
 
 
 class MarketLifecycleState(str, Enum):
@@ -192,87 +194,6 @@ class AssignmentPlan:
     generated_at_ms: int
     control_state: ControlState
     collectors: dict[str, CollectorAssignment] = field(default_factory=dict)
-
-
-@dataclass(frozen=True)
-class ObjectNotification:
-    """Collector가 업로드한 GCS object의 메타데이터입니다."""
-
-    collector_id: str
-    assignment_version: int
-    bucket: str
-    object_name: str
-    generation: str
-    line_count: int
-    first_event_ts_ms: Optional[int]
-    last_event_ts_ms: Optional[int]
-    checksum_crc32c: Optional[str]
-
-    def idempotency_key(self) -> str:
-        """object 단위 멱등성 key를 반환합니다.
-
-        반환값:
-            안정적인 ``bucket/object_name#generation`` key입니다.
-
-        입출력 예시:
-            >>> n = ObjectNotification('c', 1, 'b', 'o', 'g', 1, None, None, None)
-            >>> n.idempotency_key()
-            'b/o#g'
-        """
-
-        return f"{self.bucket}/{self.object_name}#{self.generation}"
-
-
-@dataclass(frozen=True)
-class ProcessedObject:
-    """GCS object generation이 병합 완료되었음을 나타내는 영속 기록입니다."""
-
-    bucket: str
-    object_name: str
-    generation: str
-    processed_at_ms: int
-    input_line_count: int
-    valid_line_count: int
-    skipped_line_count: int
-    output_path: str
-
-    def idempotency_key(self) -> str:
-        """중복 skip 판단에 사용하는 object 단위 멱등성 key를 반환합니다."""
-
-        return f"{self.bucket}/{self.object_name}#{self.generation}"
-
-
-@dataclass(frozen=True)
-class BudgetPolicy:
-    """GCS 비용 가드레일에 사용할 예산 임계값 설정입니다."""
-
-    warning_threshold_usd: float
-    hard_stop_threshold_usd: float
-    discord_webhook_secret_name: str
-    check_interval_secs: int
-
-
-@dataclass(frozen=True)
-class BudgetState:
-    """Orchestrator가 유지하는 런타임 예산 상태입니다."""
-
-    estimated_gcs_cost_usd: float
-    uploaded_bytes: int
-    object_create_count: int
-    object_list_count: int
-    object_get_count: int
-    object_delete_count: int
-    control_state: ControlState
-
-    def warning_exceeded(self, policy: BudgetPolicy) -> bool:
-        """경고 임계값을 넘었는지 반환합니다."""
-
-        return self.estimated_gcs_cost_usd >= policy.warning_threshold_usd
-
-    def hard_stop_exceeded(self, policy: BudgetPolicy) -> bool:
-        """강제 중단 임계값을 넘었는지 반환합니다."""
-
-        return self.estimated_gcs_cost_usd >= policy.hard_stop_threshold_usd
 
 
 @dataclass(frozen=True)
