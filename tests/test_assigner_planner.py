@@ -2,7 +2,7 @@
 
 import unittest
 
-from src.orchestrator.assigner import PolymarketAdapterPolicy, build_polymarket_assignment_plan
+from src.orchestrator.domains.polymarket.assigner import PolymarketAdapterPolicy, build_polymarket_assignment_plan
 from src.orchestrator.contracts import (
     AssignmentLimits,
     AssignmentPlan,

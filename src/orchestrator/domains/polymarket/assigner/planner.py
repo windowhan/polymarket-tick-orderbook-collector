@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Mapping, Optional
 
-from src.orchestrator.assigner.polymarket_adapter import (
+from src.orchestrator.domains.polymarket.assigner.adapter import (
     PolymarketAdapterPolicy,
     ShardWeightEstimate,
     capacities_to_node_specs,
