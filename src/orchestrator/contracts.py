@@ -11,6 +11,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional
 
+from src.orchestrator.core.control import ControlState
+
 
 class MarketLifecycleState(str, Enum):
     """Market Universe Manager가 부여하는 마켓 생명주기 상태입니다.
@@ -27,18 +29,6 @@ class MarketLifecycleState(str, Enum):
     ARCHIVED = "ARCHIVED"
     EXCLUDED = "EXCLUDED"
 
-
-class ControlState(str, Enum):
-    """배정과 함께 반환되는 전역 제어 상태입니다.
-
-    Collector 프로세스는 ``EMERGENCY_STOP_BY_BUDGET``을 일반 배정 변경보다
-    더 높은 우선순위로 처리해야 합니다.
-    """
-
-    RUNNING = "RUNNING"
-    PAUSED_BY_OPERATOR = "PAUSED_BY_OPERATOR"
-    PAUSED_BY_BUDGET_WARNING = "PAUSED_BY_BUDGET_WARNING"
-    EMERGENCY_STOP_BY_BUDGET = "EMERGENCY_STOP_BY_BUDGET"
 
 
 class OrderbookEventType(str, Enum):
