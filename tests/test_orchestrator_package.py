@@ -64,5 +64,14 @@ class OrchestratorPackageImportTests(unittest.TestCase):
         self.assertEqual(notification.idempotency_key(), "b/o#g")
 
 
+    # 샘플 입력: domains.polymarket.contracts MarketInfo import
+    # 기대 출력: Polymarket domain contract import 성공
+    def test_polymarket_contracts_are_importable(self):
+        """Polymarket domain contracts가 import 가능한 상황을 검증합니다."""
+        from src.orchestrator.domains.polymarket.contracts import MarketLifecycleState
+
+        self.assertEqual(MarketLifecycleState.ACTIVE.value, "ACTIVE")
+
+
 if __name__ == "__main__":
     unittest.main()
