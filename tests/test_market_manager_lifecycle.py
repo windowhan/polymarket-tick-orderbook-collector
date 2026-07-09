@@ -5,7 +5,7 @@ from src.orchestrator.domains.polymarket.market_manager.lifecycle import (
     compute_lifecycle_state,
     should_include_in_active_universe,
 )
-from src.orchestrator.market_manager.normalizer import RawMarketFlags
+from src.orchestrator.domains.polymarket.market_manager.normalizer import RawMarketFlags
 from src.orchestrator.domains.polymarket.market_manager.policy import LifecycleMemory, LifecyclePolicy
 
 
