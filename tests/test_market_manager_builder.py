@@ -1,7 +1,7 @@
 import unittest
 
 from src.orchestrator.contracts import MarketInfo, MarketLifecycleState, MarketUniverseSnapshot
-from src.orchestrator.market_manager.builder import build_market_universe_snapshot
+from src.orchestrator.domains.polymarket.market_manager.builder import build_market_universe_snapshot
 from src.orchestrator.domains.polymarket.market_manager.policy import LifecycleMemory, LifecyclePolicy
 
 

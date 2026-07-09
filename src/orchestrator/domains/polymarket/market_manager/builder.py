@@ -10,16 +10,16 @@ from dataclasses import dataclass
 from typing import Any, Iterable, Mapping
 
 from src.orchestrator.contracts import MarketUniverseSnapshot
-from src.orchestrator.market_manager.diff import UniverseDiff, build_universe_diff
-from src.orchestrator.market_manager.lifecycle import (
+from src.orchestrator.domains.polymarket.market_manager.diff import UniverseDiff, build_universe_diff
+from src.orchestrator.domains.polymarket.market_manager.lifecycle import (
     compute_lifecycle_state,
     should_include_in_active_universe,
 )
-from src.orchestrator.market_manager.normalizer import (
+from src.orchestrator.domains.polymarket.market_manager.normalizer import (
     extract_raw_market_flags,
     normalize_gamma_market,
 )
-from src.orchestrator.market_manager.policy import LifecycleMemory, LifecyclePolicy
+from src.orchestrator.domains.polymarket.market_manager.policy import LifecycleMemory, LifecyclePolicy
 
 
 @dataclass(frozen=True)
