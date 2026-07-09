@@ -1,7 +1,7 @@
 import unittest
 
 from src.orchestrator.contracts import MarketLifecycleState
-from src.orchestrator.market_manager.normalizer import (
+from src.orchestrator.domains.polymarket.market_manager.normalizer import (
     extract_market_id,
     extract_raw_market_flags,
     extract_token_ids,
