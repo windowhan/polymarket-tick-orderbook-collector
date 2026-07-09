@@ -34,9 +34,6 @@ class OrchestratorPackageImportTests(unittest.TestCase):
         self.assertTrue(capacity.fits_subscription_counts(2, 4, 1))
         self.assertFalse(capacity.fits_subscription_counts(3, 4, 1))
 
-
-if __name__ == "__main__":
-    unittest.main()
     # 샘플 입력: domains.polymarket과 하위 namespace package import
     # 기대 출력: 모든 domain package import 성공
     def test_polymarket_domain_packages_are_importable(self):
@@ -55,3 +52,7 @@ if __name__ == "__main__":
         from src.orchestrator.core import ControlState
 
         self.assertEqual(ControlState.RUNNING.value, "RUNNING")
+
+
+if __name__ == "__main__":
+    unittest.main()
