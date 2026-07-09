@@ -7,6 +7,7 @@ from src.orchestrator.market_manager.policy import LifecycleMemory, LifecyclePol
 
 class MarketManagerBuilderTests(unittest.TestCase):
     def test_first_refresh_creates_version_one_with_ten_markets(self):
+        """첫 Gamma refresh에서 모든 유효 market이 version 1 snapshot에 들어가는 상황을 검증합니다."""
         result = build_market_universe_snapshot(
             [_raw_market(f"market-{idx}") for idx in range(10)],
             previous_snapshot=None,
@@ -21,6 +22,7 @@ class MarketManagerBuilderTests(unittest.TestCase):
         self.assertTrue(result.diff.has_changes())
 
     def test_token_added_increments_version_and_marks_token_diff(self):
+        """기존 market의 token 목록이 늘면 universe version과 token diff가 갱신되는 상황을 검증합니다."""
         previous = _snapshot(1, [_market("market-1", ["token-a"])])
 
         result = build_market_universe_snapshot(
@@ -36,6 +38,7 @@ class MarketManagerBuilderTests(unittest.TestCase):
         self.assertEqual(result.snapshot.markets["market-1"].token_ids, ["token-a", "token-b"])
 
     def test_no_diff_keeps_previous_version(self):
+        """동일 payload refresh에서는 snapshot version을 올리지 않는 상황을 검증합니다."""
         previous = _snapshot(7, [_market("market-1", ["token-a"])])
 
         result = build_market_universe_snapshot(
@@ -51,6 +54,7 @@ class MarketManagerBuilderTests(unittest.TestCase):
         self.assertEqual(result.snapshot.generated_at_ms, 9_000)
 
     def test_payload_order_does_not_change_snapshot_order(self):
+        """Gamma payload 순서가 바뀌어도 snapshot market order가 deterministic하게 유지되는 상황을 검증합니다."""
         result = build_market_universe_snapshot(
             [_raw_market("market-b"), _raw_market("market-a")],
             previous_snapshot=None,
@@ -62,6 +66,7 @@ class MarketManagerBuilderTests(unittest.TestCase):
         self.assertEqual(list(result.snapshot.markets), ["market-a", "market-b"])
 
     def test_closed_market_drains_then_gets_removed_after_window(self):
+        """닫힌 market이 drain window 동안 유지된 뒤 제거되는 lifecycle 흐름을 검증합니다."""
         policy = LifecyclePolicy(new_market_confirm_refreshes=0, closed_market_drain_secs=60)
         previous = _snapshot(1, [_market("market-1", ["token-a"])])
 
@@ -90,6 +95,7 @@ class MarketManagerBuilderTests(unittest.TestCase):
         self.assertEqual(removed.diff.removed_market_ids, frozenset({"market-1"}))
 
     def test_archived_market_is_removed_from_active_universe(self):
+        """archived market을 active universe에서 즉시 제거하는 정책 상황을 검증합니다."""
         previous = _snapshot(1, [_market("market-1", ["token-a"])])
 
         result = build_market_universe_snapshot(

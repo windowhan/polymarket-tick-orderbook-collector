@@ -16,6 +16,7 @@ from src.orchestrator.rebalance_core import (
 
 class AssignmentPlannerCapacityTests(unittest.TestCase):
     def test_assigns_tasks_without_exceeding_capacity(self) -> None:
+        """여러 task가 node capacity를 넘지 않을 때 stable order로 모두 배정되는 상황을 검증합니다."""
         tasks = [
             TaskSpec("task-b", ResourceVector({"markets": 1, "tokens": 2})),
             TaskSpec("task-a", ResourceVector({"markets": 1, "tokens": 2})),
@@ -32,6 +33,7 @@ class AssignmentPlannerCapacityTests(unittest.TestCase):
         self.assertEqual(plan.unassigned_task_ids, ())
 
     def test_leaves_task_unassigned_when_capacity_is_missing(self) -> None:
+        """필요 resource capacity가 없는 task를 미배정으로 남기고 reason을 기록하는 상황을 검증합니다."""
         tasks = [TaskSpec("task-a", ResourceVector({"tokens": 1}))]
         nodes = [NodeSpec("node-a", ResourceVector({"markets": 1}))]
 
@@ -42,6 +44,7 @@ class AssignmentPlannerCapacityTests(unittest.TestCase):
         self.assertEqual(plan.reasons["task-a"], ("node-a:capacity_exceeded",))
 
     def test_uses_stable_node_tie_break(self) -> None:
+        """동점 후보가 여러 node일 때 node id 기준 tie-break가 적용되는 상황을 검증합니다."""
         tasks = [TaskSpec("task-a", ResourceVector({"markets": 1}))]
         nodes = [
             NodeSpec("node-b", ResourceVector({"markets": 1})),
@@ -55,6 +58,7 @@ class AssignmentPlannerCapacityTests(unittest.TestCase):
 
 class AssignmentPlannerStabilityTests(unittest.TestCase):
     def test_keeps_valid_previous_assignment_before_score(self) -> None:
+        """유효한 이전 배정이 score가 높은 새 후보보다 우선되는 상황을 검증합니다."""
         tasks = [TaskSpec("task-a", ResourceVector({"markets": 1}))]
         nodes = [
             NodeSpec("node-a", ResourceVector({"markets": 1})),
@@ -71,6 +75,7 @@ class AssignmentPlannerStabilityTests(unittest.TestCase):
         self.assertEqual(plan.assignments, (Assignment("task-a", "node-a"),))
 
     def test_input_order_does_not_change_plan(self) -> None:
+        """task/node 입력 순서가 달라도 동일한 assignment 결과가 나오는 상황을 검증합니다."""
         tasks = [
             TaskSpec("task-b", ResourceVector({"markets": 1})),
             TaskSpec("task-a", ResourceVector({"markets": 1})),
@@ -86,6 +91,7 @@ class AssignmentPlannerStabilityTests(unittest.TestCase):
         self.assertEqual(first.assignments, second.assignments)
 
     def test_callback_reject_takes_precedence(self) -> None:
+        """adapter reject가 capacity와 score보다 우선해 해당 node 배정을 막는 상황을 검증합니다."""
         tasks = [TaskSpec("task-a", ResourceVector({"markets": 1}))]
         nodes = [
             NodeSpec("node-a", ResourceVector({"markets": 1})),
@@ -118,6 +124,7 @@ class _RejectNodeAAdapter:
 
 class AssignmentPlannerRuntimeHintTests(unittest.TestCase):
     def test_runtime_unavailable_node_is_excluded(self) -> None:
+        """runtime hint가 unavailable인 node를 신규 배정 후보에서 제외하는 상황을 검증합니다."""
         tasks = [TaskSpec("task-a", ResourceVector({"markets": 1}))]
         nodes = [
             NodeSpec("node-a", ResourceVector({"markets": 1})),
@@ -132,6 +139,7 @@ class AssignmentPlannerRuntimeHintTests(unittest.TestCase):
         self.assertEqual(plan.assignments, (Assignment("task-a", "node-b"),))
 
     def test_not_accepting_new_tasks_keeps_previous_but_blocks_new(self) -> None:
+        """신규 task 차단 node가 기존 배정은 유지하고 새 task만 받지 않는 상황을 검증합니다."""
         tasks = [
             TaskSpec("task-a", ResourceVector({"markets": 1})),
             TaskSpec("task-b", ResourceVector({"markets": 1})),
@@ -153,6 +161,7 @@ class AssignmentPlannerRuntimeHintTests(unittest.TestCase):
         )
 
     def test_not_accepting_new_tasks_reason_is_reported(self) -> None:
+        """신규 task 차단 때문에 미배정된 task에 reason이 남는 상황을 검증합니다."""
         tasks = [TaskSpec("task-a", ResourceVector({"markets": 1}))]
         nodes = [NodeSpec("node-a", ResourceVector({"markets": 1}), accepts_new_tasks=False)]
 

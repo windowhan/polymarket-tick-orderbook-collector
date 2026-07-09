@@ -17,6 +17,7 @@ from src.orchestrator.contracts import (
 
 class PolymarketAssignmentPlannerTests(unittest.TestCase):
     def test_builds_assignment_plan_from_generic_core(self) -> None:
+        """generic core 결과가 기존 Collector AssignmentPlan 계약으로 변환되는 정상 상황을 검증합니다."""
         universe = MarketUniverseSnapshot(1, 1000, {"m1": self._market("m1", ["t1", "t2"])})
         capacities = {"collector-a": CollectorCapacity(2, 4, 1, None, 10)}
 
@@ -30,6 +31,7 @@ class PolymarketAssignmentPlannerTests(unittest.TestCase):
         self.assertEqual(assignment.limits.max_ws_connections, 1)
 
     def test_hard_stop_bypasses_collectors(self) -> None:
+        """예산 hard stop 상태에서는 core planner를 호출하지 않고 빈 중단 plan을 만드는 상황을 검증합니다."""
         universe = MarketUniverseSnapshot(3, 1000, {})
 
         plan = build_polymarket_assignment_plan(
@@ -44,6 +46,7 @@ class PolymarketAssignmentPlannerTests(unittest.TestCase):
         self.assertEqual(plan.collectors, {})
 
     def test_previous_plan_keeps_existing_collector(self) -> None:
+        """이전 배정이 유효하면 더 앞선 collector 후보가 있어도 기존 collector를 유지하는 상황을 검증합니다."""
         universe = MarketUniverseSnapshot(1, 1000, {"m1": self._market("m1", ["t1"])})
         capacities = {
             "collector-a": CollectorCapacity(1, 1, 1, None, 10),
