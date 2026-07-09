@@ -6,7 +6,7 @@ from src.orchestrator.market_manager.lifecycle import (
     should_include_in_active_universe,
 )
 from src.orchestrator.market_manager.normalizer import RawMarketFlags
-from src.orchestrator.market_manager.policy import LifecycleMemory, LifecyclePolicy
+from src.orchestrator.domains.polymarket.market_manager.policy import LifecycleMemory, LifecyclePolicy
 
 
 class MarketManagerLifecycleTests(unittest.TestCase):
