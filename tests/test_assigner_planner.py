@@ -3,12 +3,12 @@
 import unittest
 
 from src.orchestrator.domains.polymarket.assigner import PolymarketAdapterPolicy, build_polymarket_assignment_plan
-from src.orchestrator.contracts import (
+from src.orchestrator.core.control import ControlState
+from src.orchestrator.domains.polymarket.contracts import (
     AssignmentLimits,
     AssignmentPlan,
     CollectorAssignment,
     CollectorCapacity,
-    ControlState,
     MarketInfo,
     MarketLifecycleState,
     MarketUniverseSnapshot,

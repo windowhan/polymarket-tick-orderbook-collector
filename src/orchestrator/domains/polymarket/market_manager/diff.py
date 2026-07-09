@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from src.orchestrator.contracts import MarketInfo, MarketUniverseSnapshot
+from src.orchestrator.domains.polymarket.contracts import MarketInfo, MarketUniverseSnapshot
 
 
 @dataclass(frozen=True)

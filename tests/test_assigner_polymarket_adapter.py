@@ -10,7 +10,7 @@ from src.orchestrator.domains.polymarket.assigner.adapter import (
     snapshot_to_task_specs,
     status_to_runtime_hint,
 )
-from src.orchestrator.contracts import (
+from src.orchestrator.domains.polymarket.contracts import (
     CollectorCapacity,
     CollectorStatus,
     MarketInfo,

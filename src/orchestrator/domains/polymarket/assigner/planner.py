@@ -11,13 +11,13 @@ from src.orchestrator.domains.polymarket.assigner.adapter import (
     snapshot_to_task_specs,
     statuses_to_runtime_hints,
 )
-from src.orchestrator.contracts import (
+from src.orchestrator.core.control import ControlState
+from src.orchestrator.domains.polymarket.contracts import (
     AssignmentLimits,
     AssignmentPlan,
     CollectorAssignment,
     CollectorCapacity,
     CollectorStatus,
-    ControlState,
     MarketInfo,
     MarketUniverseSnapshot,
 )

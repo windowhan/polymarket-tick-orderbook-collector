@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Iterable, Mapping
 
-from src.orchestrator.contracts import MarketUniverseSnapshot
+from src.orchestrator.domains.polymarket.contracts import MarketUniverseSnapshot
 from src.orchestrator.domains.polymarket.market_manager.diff import UniverseDiff, build_universe_diff
 from src.orchestrator.domains.polymarket.market_manager.lifecycle import (
     compute_lifecycle_state,

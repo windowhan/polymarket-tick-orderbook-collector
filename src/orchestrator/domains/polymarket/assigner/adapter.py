@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from math import ceil
 from typing import Mapping, Optional
 
-from src.orchestrator.contracts import (
+from src.orchestrator.domains.polymarket.contracts import (
     CollectorCapacity,
     CollectorStatus,
     MarketInfo,

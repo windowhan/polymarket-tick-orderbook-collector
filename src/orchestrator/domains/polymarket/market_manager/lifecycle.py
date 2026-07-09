@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from src.orchestrator.contracts import MarketInfo, MarketLifecycleState
+from src.orchestrator.domains.polymarket.contracts import MarketInfo, MarketLifecycleState
 from src.orchestrator.domains.polymarket.market_manager.normalizer import RawMarketFlags
 from src.orchestrator.domains.polymarket.market_manager.policy import LifecycleMemory, LifecyclePolicy
 

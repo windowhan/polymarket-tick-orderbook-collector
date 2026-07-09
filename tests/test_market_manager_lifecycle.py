@@ -1,6 +1,6 @@
 import unittest
 
-from src.orchestrator.contracts import MarketInfo, MarketLifecycleState
+from src.orchestrator.domains.polymarket.contracts import MarketInfo, MarketLifecycleState
 from src.orchestrator.domains.polymarket.market_manager.lifecycle import (
     compute_lifecycle_state,
     should_include_in_active_universe,

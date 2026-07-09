@@ -10,7 +10,7 @@ import json
 from dataclasses import dataclass
 from typing import Any, Mapping
 
-from src.orchestrator.contracts import MarketInfo, MarketLifecycleState
+from src.orchestrator.domains.polymarket.contracts import MarketInfo, MarketLifecycleState
 
 
 @dataclass(frozen=True)
