@@ -47,3 +47,11 @@ if __name__ == "__main__":
         import src.orchestrator.domains.polymarket.market_manager
 
         self.assertIsNotNone(src.orchestrator.domains)
+
+    # 샘플 입력: src.orchestrator.core와 ControlState import
+    # 기대 출력: core package와 ControlState.RUNNING import 성공
+    def test_core_package_is_importable(self):
+        """도메인 중립 core package가 import 가능한 상황을 검증합니다."""
+        from src.orchestrator.core import ControlState
+
+        self.assertEqual(ControlState.RUNNING.value, "RUNNING")
