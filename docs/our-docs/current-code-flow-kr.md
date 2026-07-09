@@ -5,23 +5,28 @@
 ## 1. 한 줄 요약
 현재 코드는 end-to-end 서비스가 아니라, 그린필드 v2를 위한 **계약 타입 + 순수 Orchestrator 로직 + 테스트 기반**이다.
 - Rust: 공유 계약 타입과 최소 smoke binary 중심.
-- Python: market universe 생성, generic rebalance core, Polymarket assignment adapter 중심.
+- Python: Polymarket 도메인 패키지, generic rebalance core, core/infra 계약 패키지 중심.
 - 아직 없음: 실제 Gamma HTTP 호출, WebSocket collector runtime, API server, GCS, Discord, Terraform 배포.
 
 ## 2. 현재 디렉터리 책임
 ```text
 src/
-  common/contracts.rs          # Rust 공유 계약 타입
-  node/mod.rs                  # Rust Collector runtime 자리표시자
-  lib.rs                       # Rust library entry + library_version()
-  main.rs                      # smoke binary
-  orchestrator/contracts.py    # Python 공유 계약 dataclass/enum
-  orchestrator/market_manager/ # raw market -> MarketUniverseSnapshot
-  orchestrator/rebalance_core/ # 도메인 중립 task/node assignment core
-  orchestrator/assigner/       # Polymarket 계약 <-> rebalance_core adapter/wrapper
-  orchestrator/autoscale/      # 자리표시자
-  orchestrator/compactor/      # 자리표시자
-  orchestrator/viewer/         # 자리표시자
+  common/contracts.rs                         # Rust 공유 계약 타입
+  node/mod.rs                                 # Rust Collector runtime 자리표시자
+  lib.rs                                      # Rust library entry + library_version()
+  main.rs                                     # smoke binary
+  orchestrator/core/                          # 도메인 중립 control/budget 계약
+  orchestrator/infra/gcs/                     # GCS object/manifest 계약
+  orchestrator/domains/polymarket/contracts.py # Polymarket market/collector/event 계약
+  orchestrator/domains/polymarket/market_manager/ # raw Gamma market -> MarketUniverseSnapshot
+  orchestrator/domains/polymarket/assigner/   # Polymarket 계약 <-> rebalance_core adapter/wrapper
+  orchestrator/rebalance_core/                # 도메인 중립 task/node assignment core
+  orchestrator/contracts.py                   # compatibility re-export facade
+  orchestrator/market_manager/                # compatibility re-export facade
+  orchestrator/assigner/                      # compatibility re-export facade
+  orchestrator/autoscale/                     # 자리표시자
+  orchestrator/compactor/                     # 자리표시자
+  orchestrator/viewer/                        # 자리표시자
 tests/                         # Python unit tests
 ```
 
@@ -43,8 +48,18 @@ Rust Collector와 Python Orchestrator가 공유해야 할 JSON 계약을 고정�
 - `node/mod.rs`: 앞으로 Rust Collector runtime이 들어갈 자리표시자.
 
 ## 4. Python 계약 계층
-`src/orchestrator/contracts.py`는 Python Orchestrator에서 쓰는 dataclass/enum 계약이다.
-Rust 계약과 같은 의미를 유지하는 것이 목적이다.
+Python 계약은 현재 세 경계로 나뉘어 있다. `src/orchestrator/contracts.py`는 과거 import를 깨뜨리지 않기 위한 compatibility re-export facade다.
+새 코드에서는 아래 새 위치를 직접 import하는 것이 기준이다.
+
+- `src/orchestrator/core/control.py`
+  - `ControlState`처럼 Polymarket과 무관한 Orchestrator 제어 상태를 둔다.
+- `src/orchestrator/core/budget.py`
+  - `BudgetPolicy`, `BudgetState`처럼 비용 guard에 필요한 도메인 중립 계약을 둔다.
+- `src/orchestrator/infra/gcs/contracts.py`
+  - `ObjectNotification`, `ProcessedObject`처럼 GCS object 처리/manifest 계약을 둔다.
+- `src/orchestrator/domains/polymarket/contracts.py`
+  - `MarketInfo`, `MarketUniverseSnapshot`, `CollectorCapacity`, `AssignmentPlan`, `OrderbookEvent`처럼 Polymarket/CLOB 의미가 있는 계약을 둔다.
+
 중요 helper:
 - `CollectorCapacity.fits_subscription_counts()`
   - planned market/token/ws count가 declared capacity 안인지 확인한다.
@@ -54,10 +69,11 @@ Rust 계약과 같은 의미를 유지하는 것이 목적이다.
   - object generation 단위 idempotency key를 만든다.
 - `BudgetState.warning_exceeded()` / `hard_stop_exceeded()`
   - 비용 임계값 도달 여부를 계산한다.
-이 파일도 endpoint, persistence, webhook 호출을 수행하지 않는다.
+계약 계층은 endpoint, persistence, webhook 호출을 수행하지 않는다.
 
 ## 5. Market Universe 생성 흐름
-구현 위치: `src/orchestrator/market_manager/`
+구현 위치: `src/orchestrator/domains/polymarket/market_manager/`
+기존 `src/orchestrator/market_manager/`는 compatibility re-export facade로만 유지한다.
 현재 이 계층은 Gamma API를 직접 호출하지 않는다.
 호출자가 넘긴 raw market payload iterable을 순수 함수로 처리한다.
 ```text
@@ -170,10 +186,11 @@ tasks/nodes/previous_assignments/context
 planner를 다시 돌릴 이유를 설명하는 순수 계산이다.
 
 ## 7. Polymarket Assigner
-구현 위치: `src/orchestrator/assigner/`
+구현 위치: `src/orchestrator/domains/polymarket/assigner/`
+기존 `src/orchestrator/assigner/`는 compatibility re-export facade로만 유지한다.
 이 계층은 Polymarket 계약 타입과 generic core 사이를 변환한다.
 
-### 7.1 `polymarket_adapter.py`
+### 7.1 `adapter.py`
 주요 타입:
 - `PolymarketAdapterPolicy`
   - `max_tokens_per_ws_connection`

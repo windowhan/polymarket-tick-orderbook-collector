@@ -21,6 +21,8 @@
 
 ## 2. 목표 구조
 
+2026-07-09 기준 Python 경계 분리는 구현되어 있다. 기존 import path는 compatibility facade로 유지하며, 새 구현과 테스트는 `core/`, `infra/gcs/`, `domains/polymarket/`를 우선 사용한다. Rust 계약 분리는 아직 장기 목표로 남아 있다.
+
 Python 목표 구조:
 
 ```text
