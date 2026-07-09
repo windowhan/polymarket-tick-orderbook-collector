@@ -54,5 +54,15 @@ class OrchestratorPackageImportTests(unittest.TestCase):
         self.assertEqual(ControlState.RUNNING.value, "RUNNING")
 
 
+    # 샘플 입력: src.orchestrator.infra.gcs ObjectNotification import
+    # 기대 출력: GCS infra package import와 idempotency key 생성 성공
+    def test_gcs_infra_package_is_importable(self):
+        """GCS infra package가 import 가능한 상황을 검증합니다."""
+        from src.orchestrator.infra.gcs import ObjectNotification
+
+        notification = ObjectNotification("c", 1, "b", "o", "g", 1, None, None, None)
+        self.assertEqual(notification.idempotency_key(), "b/o#g")
+
+
 if __name__ == "__main__":
     unittest.main()
