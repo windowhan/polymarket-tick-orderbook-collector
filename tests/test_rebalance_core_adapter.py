@@ -13,6 +13,8 @@ from src.orchestrator.rebalance_core import (
 
 
 class ConstraintDecisionTests(unittest.TestCase):
+    # 샘플 입력: ConstraintDecision.allow(reason=ok), reject(blocked, 테스트 거절)
+    # 기대 출력: allowed=True/code=allowed, rejected=False/code=blocked/reason 유지
     def test_allow_and_reject_helpers(self) -> None:
         """adapter decision helper가 허용/거절 결과와 reason을 올바르게 만드는 상황을 검증합니다."""
         allowed = ConstraintDecision.allow(reason="ok")
@@ -23,6 +25,8 @@ class ConstraintDecisionTests(unittest.TestCase):
         self.assertEqual(rejected.code, "blocked")
         self.assertEqual(rejected.reason, "테스트 거절")
 
+    # 샘플 입력: ConstraintDecision(True, code='')
+    # 기대 출력: ValueError 발생
     def test_empty_code_is_rejected(self) -> None:
         """비어 있는 decision code를 거절해 reason 집계가 깨지지 않는 상황을 검증합니다."""
         with self.assertRaises(ValueError):
@@ -30,6 +34,8 @@ class ConstraintDecisionTests(unittest.TestCase):
 
 
 class DefaultAssignmentAdapterTests(unittest.TestCase):
+    # 샘플 입력: task-a와 node-a, DefaultAssignmentAdapter
+    # 기대 출력: can_assign.allowed=True, score=0.0
     def test_default_adapter_allows_every_pair_with_zero_score(self) -> None:
         """기본 adapter가 모든 pair를 허용하고 동일 선호 점수를 주는 상황을 검증합니다."""
         adapter = DefaultAssignmentAdapter()

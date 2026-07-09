@@ -14,6 +14,8 @@ from src.orchestrator.rebalance_core import (
 
 
 class RebalanceReasonTests(unittest.TestCase):
+    # 샘플 입력: previous task-old/node-old, current task-new/node-new
+    # 기대 출력: task_added/task_removed/node_added/node_removed reason
     def test_detects_task_and_node_add_remove(self) -> None:
         """task와 node의 추가/삭제가 rebalance reason으로 기록되는 상황을 검증합니다."""
         previous_tasks = [TaskSpec("task-old", ResourceVector({"markets": 1}))]
@@ -33,6 +35,8 @@ class RebalanceReasonTests(unittest.TestCase):
             ),
         )
 
+    # 샘플 입력: node-a runtime unavailable, node-b accepts_new_tasks=False
+    # 기대 출력: node_unavailable과 node_not_accepting_new_tasks reason
     def test_detects_unavailable_and_not_accepting_nodes(self) -> None:
         """unavailable node와 신규 배정 차단 node가 각각 다른 reason으로 기록되는 상황을 검증합니다."""
         tasks = [TaskSpec("task-a", ResourceVector({"markets": 1}))]
@@ -60,6 +64,8 @@ class RebalanceReasonTests(unittest.TestCase):
             ),
         )
 
+    # 샘플 입력: previous/current task와 node가 동일
+    # 기대 출력: RebalanceReason(no_changes, planner, inputs)
     def test_reports_no_changes(self) -> None:
         """입력 변화가 없을 때 no_changes reason으로 명시하는 상황을 검증합니다."""
         tasks = [TaskSpec("task-a", ResourceVector({"markets": 1}))]

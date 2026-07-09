@@ -10,6 +10,8 @@ from src.orchestrator.market_manager.policy import LifecycleMemory, LifecyclePol
 
 
 class MarketManagerLifecycleTests(unittest.TestCase):
+    # 샘플 입력: 첫 관측 active/open market, confirm_refreshes=2
+    # 기대 출력: lifecycle_state=DISCOVERED
     def test_new_market_starts_as_discovered(self):
         """신규 market이 곧바로 ACTIVE가 아니라 DISCOVERED로 시작하는 상황을 검증합니다."""
         state, memory = compute_lifecycle_state(
@@ -24,6 +26,8 @@ class MarketManagerLifecycleTests(unittest.TestCase):
         self.assertEqual(memory.seen_refresh_counts["market-1"], 1)
         self.assertTrue(should_include_in_active_universe(state, LifecyclePolicy()))
 
+    # 샘플 입력: 동일 신규 market을 confirm_refreshes만큼 반복 관측
+    # 기대 출력: lifecycle_state=ACTIVE
     def test_confirmed_new_market_becomes_active(self):
         """정책상 필요한 refresh 확인을 마친 신규 market이 ACTIVE로 전환되는 상황을 검증합니다."""
         policy = LifecyclePolicy(new_market_confirm_refreshes=1)
@@ -42,6 +46,8 @@ class MarketManagerLifecycleTests(unittest.TestCase):
         self.assertEqual(second_state, MarketLifecycleState.ACTIVE)
         self.assertEqual(second_memory.seen_refresh_counts["market-1"], 2)
 
+    # 샘플 입력: 이전 ACTIVE market이 계속 active/open
+    # 기대 출력: lifecycle_state=ACTIVE 유지
     def test_open_existing_market_stays_active(self):
         """이미 ACTIVE인 열린 market이 다음 refresh에서도 ACTIVE를 유지하는 상황을 검증합니다."""
         state, _ = compute_lifecycle_state(
@@ -54,6 +60,8 @@ class MarketManagerLifecycleTests(unittest.TestCase):
 
         self.assertEqual(state, MarketLifecycleState.ACTIVE)
 
+    # 샘플 입력: 이전 ACTIVE market에 closed=True
+    # 기대 출력: lifecycle_state=DRAINING
     def test_closed_market_enters_draining_before_removal(self):
         """기존 active market이 closed 신호를 받으면 먼저 DRAINING에 들어가는 상황을 검증합니다."""
         policy = LifecyclePolicy(closed_market_drain_secs=60)
@@ -76,6 +84,8 @@ class MarketManagerLifecycleTests(unittest.TestCase):
         self.assertFalse(should_include_in_active_universe(closed_state, policy))
         self.assertEqual(closed_memory.draining_since_ms["market-1"], 100_000)
 
+    # 샘플 입력: 이전 ACTIVE market에 accepting_orders=False
+    # 기대 출력: lifecycle_state=DRAINING
     def test_accepting_orders_false_enters_draining(self):
         """주문 접수 중단 신호가 closed와 동일하게 DRAINING으로 이어지는 상황을 검증합니다."""
         state, _ = compute_lifecycle_state(
@@ -88,6 +98,8 @@ class MarketManagerLifecycleTests(unittest.TestCase):
 
         self.assertEqual(state, MarketLifecycleState.DRAINING)
 
+    # 샘플 입력: archived=True flags
+    # 기대 출력: lifecycle_state=ARCHIVED이고 active universe 포함=False
     def test_archived_market_is_excluded_from_active_universe(self):
         """archived lifecycle state가 active universe 포함 대상에서 빠지는 상황을 검증합니다."""
         policy = LifecyclePolicy(archived_remove_immediately=True)
@@ -102,6 +114,8 @@ class MarketManagerLifecycleTests(unittest.TestCase):
         self.assertEqual(state, MarketLifecycleState.ARCHIVED)
         self.assertFalse(should_include_in_active_universe(state, policy))
 
+    # 샘플 입력: token_ids=[]인 active/open market
+    # 기대 출력: lifecycle_state=EXCLUDED
     def test_missing_token_ids_are_excluded(self):
         """token id가 없는 market을 정책에 따라 EXCLUDED로 분류하는 상황을 검증합니다."""
         state, _ = compute_lifecycle_state(
@@ -115,6 +129,8 @@ class MarketManagerLifecycleTests(unittest.TestCase):
         self.assertEqual(state, MarketLifecycleState.EXCLUDED)
         self.assertFalse(should_include_in_active_universe(state, LifecyclePolicy()))
 
+    # 샘플 입력: enable_order_book=False인 active/open market
+    # 기대 출력: lifecycle_state=EXCLUDED
     def test_orderbook_disabled_is_excluded(self):
         """orderbook 비활성 market을 assignment 후보에서 제외하는 상황을 검증합니다."""
         state, _ = compute_lifecycle_state(

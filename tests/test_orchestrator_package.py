@@ -5,6 +5,8 @@ from src.orchestrator import CollectorCapacity
 
 
 class OrchestratorPackageImportTests(unittest.TestCase):
+    # 샘플 입력: market_manager/assigner/autoscale/compactor/viewer import
+    # 기대 출력: 모든 subpackage import 성공
     def test_subpackages_are_importable(self):
         """예약된 orchestrator 하위 패키지들이 import 가능한 상태를 유지하는지 검증합니다."""
         for module_name in (
@@ -17,6 +19,8 @@ class OrchestratorPackageImportTests(unittest.TestCase):
             with self.subTest(module_name=module_name):
                 self.assertIsNotNone(importlib.import_module(module_name))
 
+    # 샘플 입력: from src.orchestrator import MarketInfo
+    # 기대 출력: MarketInfo import 성공
     def test_contract_export_still_works(self):
         """orchestrator package가 계약 타입 export를 깨뜨리지 않는 상황을 검증합니다."""
         capacity = CollectorCapacity(
