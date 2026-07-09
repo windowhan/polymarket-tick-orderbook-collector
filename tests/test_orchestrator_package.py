@@ -37,3 +37,13 @@ class OrchestratorPackageImportTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+    # 샘플 입력: domains.polymarket과 하위 namespace package import
+    # 기대 출력: 모든 domain package import 성공
+    def test_polymarket_domain_packages_are_importable(self):
+        """새 Polymarket domain package skeleton이 import 가능한 상황을 검증합니다."""
+        import src.orchestrator.domains
+        import src.orchestrator.domains.polymarket
+        import src.orchestrator.domains.polymarket.assigner
+        import src.orchestrator.domains.polymarket.market_manager
+
+        self.assertIsNotNone(src.orchestrator.domains)
