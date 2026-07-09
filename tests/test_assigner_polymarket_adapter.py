@@ -2,7 +2,7 @@
 
 import unittest
 
-from src.orchestrator.assigner import (
+from src.orchestrator.domains.polymarket.assigner.adapter import (
     PolymarketAdapterPolicy,
     ShardWeightEstimate,
     capacities_to_node_specs,
